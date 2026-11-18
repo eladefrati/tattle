@@ -17,7 +17,10 @@ Every surface runs the same pipeline on a different source:
 ### Network
 
 - The socket table with owning pid, for all users, without root, from the same `sysctl`
-  (`net.inet.tcp.pcblist_n`, `net.inet.udp.pcblist_n`) that `netstat -anv` reads.
+  (`net.inet.tcp.pcblist_n`, `net.inet.udp.pcblist_n`) that `netstat -anv` reads. macOS 27
+  returns the count and no records to a process without Apple's network-statistics
+  entitlement; the table is then read per process through libproc, as `lsof` reads it,
+  which gives the user's own processes' sockets and none of root's or other users'.
 - Bytes in and out per interface, from `getifaddrs`, for the menu bar and the resources
   line. There are no per-process byte counts.
 - A BPF sniffer that reads four things and nothing else: DNS replies on port 53, to build

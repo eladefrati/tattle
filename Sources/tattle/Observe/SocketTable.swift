@@ -40,7 +40,8 @@ struct SocketEntry: Equatable, Sendable {
 
 /// Reads both tables through the pcblist_n sysctls. No privileges needed, and the owning
 /// pid comes with each socket, which the per-process libproc route cannot give for other
-/// users' processes.
+/// users' processes. macOS 27 withholds the records from an ordinary process; the table is
+/// then what `ProcessSockets` gives, the user's own processes only.
 enum SocketTable {
     enum ReadError: Error, Equatable, CustomStringConvertible {
         case sysctl(name: String, errno: Int32)
@@ -54,16 +55,36 @@ enum SocketTable {
     }
 
     static func read() throws -> [SocketEntry] {
-        try read(name: "net.inet.tcp.pcblist_n", proto: .tcp) + read(name: "net.inet.udp.pcblist_n", proto: .udp)
+        let tcp = try read(name: "net.inet.tcp.pcblist_n", proto: .tcp)
+        let udp = try read(name: "net.inet.udp.pcblist_n", proto: .udp)
+        if let tcp, let udp { return tcp + udp }
+        _ = saidWithheld
+        let held = ProcessSockets.read()
+        return (tcp ?? held.filter { $0.proto == .tcp }) + (udp ?? held.filter { $0.proto == .udp })
     }
 
-    static func read(name: String, proto: SocketEntry.Proto) throws -> [SocketEntry] {
+    /// Nil when the kernel withholds the table's records.
+    private static func read(name: String, proto: SocketEntry.Proto) throws -> [SocketEntry]? {
         var buffer: UnsafeMutableRawPointer?
         var length = 0
         let status = tattle_read_pcblist(name, &buffer, &length)
         guard status == 0, let buffer else { throw ReadError.sysctl(name: name, errno: status) }
         defer { free(buffer) }
-        return parse(UnsafeRawBufferPointer(start: buffer, count: length), proto: proto)
+        let data = UnsafeRawBufferPointer(start: buffer, count: length)
+        return isWithheld(data) ? nil : parse(data, proto: proto)
+    }
+
+    /// Logged once: the reading that follows has no sockets of root or of other users.
+    private static let saidWithheld: Void = Log.app.notice(
+        "the kernel withholds the socket table's records; reading the user's own processes' sockets instead")
+
+    /// The kernel counts sockets and returns none of their records: only the leading and
+    /// the trailing tattle_xinpgen. macOS 27 answers a process without Apple's
+    /// network-statistics entitlement this way, with no error.
+    static func isWithheld(_ data: UnsafeRawBufferPointer) -> Bool {
+        guard data.count >= MemoryLayout<tattle_xinpgen>.size, let base = data.baseAddress else { return false }
+        let header = base.loadUnaligned(as: tattle_xinpgen.self)
+        return header.xig_count > 0 && data.count <= roundUp8(Int(header.xig_len)) + MemoryLayout<tattle_xinpgen>.size
     }
 
     /// The kernel may return records shorter than the current XNU headers (fields are
@@ -142,14 +163,14 @@ enum SocketTable {
             tcpState: tcpState, pid: socket.so_last_pid, effectivePid: socket.so_e_pid, uid: socket.so_uid, isDualStack: isDualStack)
     }
 
-    private static func ipv4(_ address: in_addr) -> String {
+    static func ipv4(_ address: in_addr) -> String {
         var address = address
         var text = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         inet_ntop(AF_INET, &address, &text, socklen_t(text.count))
         return String(cBuffer: text)
     }
 
-    private static func ipv6(_ address: in6_addr) -> String {
+    static func ipv6(_ address: in6_addr) -> String {
         var address = address
         var text = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
         inet_ntop(AF_INET6, &address, &text, socklen_t(text.count))

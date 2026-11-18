@@ -15,6 +15,66 @@ final class SocketTableTests: XCTestCase {
         XCTAssertTrue(entries.isEmpty)
     }
 
+    /// macOS 27 answers an ordinary process with the count and no records.
+    func testATableWithACountAndNoRecordsIsWithheld() {
+        func table(count: UInt32, records: Int) -> [UInt8] {
+            var bytes = [UInt8](repeating: 0, count: 24 + records + 24)
+            func put(_ value: UInt32, at offset: Int) {
+                withUnsafeBytes(of: value.littleEndian) { bytes.replaceSubrange(offset..<offset + 4, with: $0) }
+            }
+            put(24, at: 0)  // tattle_xinpgen.xig_len
+            put(count, at: 4)  // tattle_xinpgen.xig_count
+            put(24, at: 24 + records)  // the trailing tattle_xinpgen
+            put(count, at: 24 + records + 4)
+            return bytes
+        }
+        XCTAssertTrue(table(count: 270, records: 0).withUnsafeBytes { SocketTable.isWithheld($0) })
+        XCTAssertFalse(table(count: 0, records: 0).withUnsafeBytes { SocketTable.isWithheld($0) }, "no sockets is not withheld")
+        XCTAssertFalse(table(count: 1, records: 64).withUnsafeBytes { SocketTable.isWithheld($0) })
+        XCTAssertFalse([UInt8]().withUnsafeBytes { SocketTable.isWithheld($0) })
+    }
+
+    /// A parent and the child it forked both hold the socket; the table names one process.
+    func testASocketSeveralProcessesHoldIsOneEntryUnderTheOldest() {
+        func held(socket: UInt64, pid: Int32, started: UInt64, port: UInt16) -> ProcessSockets.Held {
+            ProcessSockets.Held(socket: socket, started: started, entry: SocketEntry(
+                proto: .tcp, isIPv6: false, localAddress: "0.0.0.0", localPort: port, remoteAddress: "0.0.0.0", remotePort: 0,
+                tcpState: SocketEntry.tcpListen, pid: pid, effectivePid: pid, uid: 501))
+        }
+        let entries = ProcessSockets.merge([
+            held(socket: 1, pid: 300, started: 20, port: 8080),
+            held(socket: 1, pid: 200, started: 10, port: 8080),
+            held(socket: 1, pid: 200, started: 10, port: 8080),  // the same socket on a second descriptor
+            held(socket: 2, pid: 300, started: 20, port: 9090),
+        ])
+        XCTAssertEqual(entries.map(\.pid), [200, 300])
+        XCTAssertEqual(entries.map(\.localPort), [8080, 9090])
+    }
+
+    func testProcessesGiveTheirOwnSockets() throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        XCTAssertEqual(withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, length) }
+        }, 0)
+        XCTAssertEqual(Darwin.listen(fd, 1), 0)
+        XCTAssertEqual(withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
+        }, 0)
+        let port = UInt16(bigEndian: address.sin_port)
+        let entry = try XCTUnwrap(ProcessSockets.read().first { $0.proto == .tcp && $0.localPort == port })
+        XCTAssertEqual(entry.pid, getpid())
+        XCTAssertEqual(entry.uid, getuid())
+        XCTAssertEqual(entry.localAddress, "127.0.0.1")
+        XCTAssertTrue(entry.isListening)
+        XCTAssertFalse(entry.isIPv6)
+    }
+
     func testTablesParseAndMatchLsof() throws {
         let entries = try SocketTable.read()
         XCTAssertFalse(entries.isEmpty)
