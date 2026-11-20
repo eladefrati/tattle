@@ -22,6 +22,14 @@ final class PacketAccessViewTests: XCTestCase {
         XCTAssertEqual(View.namesOff(.absent), "Destinations are addresses: names need packet access, which Tattle does not have yet")
     }
 
+    /// The text shown before install names every packet Tattle reads: the first packets of each
+    /// connection, and this Mac's DNS lookups and their replies.
+    func testInstallExplanationNamesEveryPacketTattleReads() {
+        let text = CaptureBroker.installExplanation
+        XCTAssertTrue(text.hasPrefix("Names for connections come from the first packets of each one and from this Mac's DNS lookups and their replies, which only a root process may read."), text)
+        XCTAssertTrue(text.contains("Tattle reads only those packets."), text)
+    }
+
     func testExplanationAndButtonForEachState() {
         XCTAssertNil(View.explanation(.absent, capturing: false))
         XCTAssertNil(View.explanation(.current, capturing: true))
