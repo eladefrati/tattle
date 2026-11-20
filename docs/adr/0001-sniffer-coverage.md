@@ -1,12 +1,13 @@
 ---
 title: "ADR-0001: Sniffer coverage"
-status: Accepted
+status: Accepted; decision 2 superseded in part by ADR-0006
 date: 2026-10-19
 ---
 
 # ADR-0001: Sniffer coverage
 
-**Status:** Accepted
+**Status:** Accepted. Decision 2 is superseded by
+[ADR-0006](0006-dns-replies-matched-to-queries.md) in which DNS replies build the map.
 
 ## Context
 
@@ -74,7 +75,8 @@ logs to a third-party log intake.
    only when nothing else named the connection. It is never shown as the name when a wire
    name exists, and it is marked as "from DNS" when shown, because an address-keyed map
    disagreed with the wire name 40% of the time here. How much it covers on a Mac without
-   Private Relay is unmeasured.
+   Private Relay is unmeasured. Which replies build the map is decided in
+   [ADR-0006](0006-dns-replies-matched-to-queries.md).
 3. A server name that is a known relay ingress (`mask*.icloud.com`, `ohttp-relay*` on
    Cloudflare and Fastly, and `apple-relay.cloudflare.com` and `apple-relay.fastly-edge.com`,
    which Apple lists for Private Cloud Compute, each anchored to its operator's domain) is
