@@ -145,13 +145,18 @@ final class RedactorTests: XCTestCase {
         XCTAssertEqual(cut("/System/Volumes/Data/Users/other/dev/acme/x"), "/System/Volumes/Data/Users/<other-user>/<folders>/x")
 
         // The last part straight inside a Users or a Volumes folder is an account's or a
-        // disk's name, wherever the folder is.
+        // disk's name where a path in any text has it replaced: straight after the home,
+        // after a disk's own folder, or after a folder whose name ends in a mark.
         XCTAssertEqual(cut("/Users/username/Volumes/ClientNAS"), "<home>/Volumes/<volume>")
         XCTAssertEqual(cut("/Users/username/Users/someone"), "<home>/Users/<other-user>")
         XCTAssertEqual(cut("/Users/username/Client (Acme)/volumes/Spare Disk"), "<home>/<folders>/volumes/<volume>")
-        XCTAssertEqual(cut("/Users/username/Library/Users/someone"), "<home>/Library/Users/<other-user>")
-        XCTAssertEqual(cut("/Users/other/Volumes/ClientNAS"), "/Users/<other-user>/Volumes/<volume>")
         XCTAssertEqual(cut("/Volumes/Backup/Volumes/Inner Disk"), "/Volumes/<volume>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Users/username/Volumes/ClientNAS/Users/someone"), "<home>/<folders>/Users/<other-user>")
+        // Anywhere else a folder that shares the name is a folder, and the last part the
+        // file's own name.
+        XCTAssertEqual(cut("/Users/username/dev/api/users/server"), "<home>/<folders>/server")
+        XCTAssertEqual(cut("/Users/username/Library/Users/someone"), "<home>/Library/<folders>/someone")
+        XCTAssertEqual(cut("/Users/other/Volumes/ClientNAS"), "/Users/<other-user>/<folders>/ClientNAS")
         XCTAssertEqual(cut("/Users/username/Users/Shared"), "<home>/<folders>/Shared", "no account")
         XCTAssertEqual(cut("/Users/username/Volumes/ClientNAS/bin/tool"), "<home>/<folders>/tool", "a folder between is not sent in any case")
 

@@ -152,7 +152,8 @@ struct Redactor: Sendable {
         guard path.hasPrefix("/") else { return path }
         let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
         let homeParts = home.split(separator: "/").map(String.init)
-        var rest = path.split(separator: "/").map(String.init)[...]
+        let all = path.split(separator: "/").map(String.init)
+        var rest = all[...]
         // Whether the path goes on through the home folder, in any case, as APFS reads a path.
         func dropHome() -> Bool {
             guard !homeParts.isEmpty, rest.count >= homeParts.count, zip(rest, homeParts).allSatisfy(same) else { return false }
@@ -194,12 +195,21 @@ struct Redactor: Sendable {
             }
         }
         var tail = rest.count > 1 ? ["<folders>", rest[rest.endIndex - 1]] : Array(rest)
-        // Straight inside a Users or a Volumes folder, wherever it is, the last part is an
-        // account's or a disk's name, as it is in any text. /Users/Shared is no account.
+        // Straight inside a Users or a Volumes folder the last part is an account's or a
+        // disk's name where a path in any text has it replaced (`pathStart`): when that
+        // folder stands straight after the home, after a disk's own folder, or after a folder
+        // whose name ends in a mark. Inside any other folder of the name ("api/users/server")
+        // it is the file's own name. /Users/Shared is no account.
         if rest.count > 1 {
-            let (parent, last) = (rest[rest.endIndex - 2], rest[rest.endIndex - 1])
-            let name = same(parent, "Volumes") ? "<volume>" : same(parent, "Users") && !same(last, "Shared") ? "<other-user>" : nil
-            if let name { tail = (rest.count > 2 ? ["<folders>"] : []) + [parent, name] }
+            let at = rest.endIndex - 2
+            let (parent, last) = (all[at], all[at + 1])
+            let isAfterHome = root.hasSuffix("<home>") && kept.isEmpty && rest.count == 2
+            let isAfterDisk = at >= 2 && same(all[at - 2], "Volumes")
+            let isAfterMark = at >= 1 && all[at - 1].range(of: "[\\w.-]$", options: .regularExpression) == nil
+            if isAfterHome || isAfterDisk || isAfterMark {
+                let name = same(parent, "Volumes") ? "<volume>" : same(parent, "Users") && !same(last, "Shared") ? "<other-user>" : nil
+                if let name { tail = (rest.count > 2 ? ["<folders>"] : []) + [parent, name] }
+            }
         }
         return ([root] + kept + tail).joined(separator: "/")
     }

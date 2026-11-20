@@ -237,8 +237,9 @@ A path under your home folder, another account's or another disk is sent without
 folders: `~/Library/CloudStorage/<a cloud drive>/Client/bin/sync` goes out as
 `<home>/Library/CloudStorage/<folders>/sync`. Of the folders, only macOS's own at the start
 are kept (`Documents`, `Downloads`, `Library/Application Support` and the like). A last part
-straight inside a `Users` or a `Volumes` folder is an account's or a disk's name and goes
-out as a placeholder: `~/Volumes/NAS` as `<home>/Volumes/<volume>`. A path
+straight inside a `Users` or a `Volumes` folder at the top of your home or of a disk is an
+account's or a disk's name and goes out as a placeholder: `~/Volumes/NAS` as
+`<home>/Volumes/<volume>`. A path
 anywhere else, such as `/Applications` or `/opt`, is where software is installed and is
 sent whole. A host name that only your network resolves is sent as a placeholder, even at
 a public address: a name under `.local`, `.lan`, `.internal`, `.home.arpa`, `.home`, `.corp`
@@ -274,6 +275,10 @@ A name is replaced only where Tattle can tell it from an ordinary word, so some 
   first part is not a number, so `python@3.12`, `pkg@1.2.3` and `user@ttys003` stay, and so
   does an address at a bare name (`name@localhost`). Anything of that shape is replaced,
   an address or not: `pkg@latest.tgz` reads `<email>`.
+- A `Users` or a `Volumes` folder is read as holding accounts or disks only at the top of
+  your home or of a disk, or after a folder whose name ends in a space or in punctuation
+  other than `.`, `-` and `_`. Anywhere else (`~/dev/api/users/server`) it is an ordinary
+  folder, and the last part is sent as it is.
 - A path loses its folders only where Tattle holds it whole: a program's, a plist's, a file a
   startup item watches. A path inside other text, such as a reason macOS gave, keeps them.
   There, a disk's name with spaces or punctuation is replaced whole only while the disk is
