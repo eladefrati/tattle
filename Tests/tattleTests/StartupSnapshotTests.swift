@@ -495,26 +495,19 @@ final class StartupSnapshotTests: XCTestCase {
     }
 
     /// A plist's author picks how many paths its job watches. Each is held apart from the
-    /// words around it, so none is searched for: four times the paths take about four times as
-    /// long to send, not sixteen.
+    /// words around it, so none is searched for, and the prompt takes time in proportion to
+    /// them.
     func testAPromptForManyWatchedPathsTakesTimeInProportionToThem() throws {
         let redactor = Redactor(home: "/Users/username", username: "username", machineNames: [])
-        func seconds(paths count: Int) throws -> Double {
+        try assertTimeGrowsInProportion(from: 500, input: { count -> ExplainRequest in
             let watched = (0..<count).map { "/Users/username/Clients/Acme \($0)/inbox/item \($0)" }
             let snapshot = StartupSnapshot.build(launchd: .init(items: [job("com.acme.sync", triggers: [.watchPaths(watched)])], appleCount: 0, unreadable: []),
                                                  loginItems: [], state: LaunchctlState(), signature: { _ in nil })
             let item = try XCTUnwrap(snapshot.items.first)
-            let request = ExplainRequest(kind: .launchItem, key: item.explainKey, facts: item.facts)
-            let clock = ContinuousClock()
-            // The best of three: another process's work is not this one's.
-            let runs = (0..<3).map { _ in
-                clock.measure { XCTAssertTrue(Prompt.build(instructions: "x", request: request, redactor: redactor).contains("<home>/<folders>/item 0")) }
-            }
-            let best = try XCTUnwrap(runs.min()).components
-            return Double(best.seconds) + Double(best.attoseconds) / 1e18
-        }
-        let (few, many) = (try seconds(paths: 1_000), try seconds(paths: 4_000))
-        XCTAssertLessThan(many, few * 8, "\(few) s for 1,000 paths, \(many) s for 4,000")
+            return ExplainRequest(kind: .launchItem, key: item.explainKey, facts: item.facts)
+        }, { request in
+            XCTAssertTrue(Prompt.build(instructions: "x", request: request, redactor: redactor).contains("<home>/<folders>/item 0"))
+        })
     }
 
     /// Whatever is in a folder that cannot be listed is unknown: the group says so.
