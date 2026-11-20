@@ -316,6 +316,32 @@ final class CaptureFilterTests: XCTestCase {
         }
     }
 
+    /// An Ethernet link whose hardware address cannot be read tells direction from this Mac's
+    /// IP addresses, as a tunnel does, and has no hardware address to test a frame's
+    /// destination against: whatever a frame is addressed to, it is passed and read.
+    func testOnEthernetWithNoHardwareAddressToReadAFramesDestinationIsNotTested() throws {
+        let filter = try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkEthernet, direction: .sourceAddresses([myV4, myV6])))
+        let destinations: [(String, [UInt8])] = [
+            ("another host's address", otherMac),
+            ("the frame's own source address", mac),
+            ("the broadcast address", [UInt8](repeating: 0xff, count: 6)),
+            ("an IPv4 multicast address", [0x01, 0x00, 0x5e, 0x00, 0x00, 0xfb]),
+            ("an IPv6 multicast address", [0x33, 0x33, 0x00, 0x00, 0x00, 0xfb]),
+        ]
+        for (family, me, peer) in [(4, myV4, peerV4), (6, myV6, peerV6)] {
+            let syn = tcp(flags: 0x02, payload: 0)
+            let packet = family == 4 ? ipv4(from: me, to: peer, proto: 6, syn) : ipv6(from: me, to: peer, proto: 6, syn)
+            let key = FlowKey(proto: .tcp, localPort: 0xd431, remote: IPAddress(bytes: peer), remotePort: 443)
+            var namer = FlowNamer(localAddresses: [IPAddress(bytes: me)], resolvers: [])
+            for (what, destination) in destinations {
+                let frame = ethernet(from: mac, to: destination, packet)
+                XCTAssertEqual(Interpreter.run(filter, on: frame), CaptureFilter.snapLength, "IPv\(family): the filter passes a SYN to \(what)")
+                XCTAssertEqual(namer.observe(try XCTUnwrap(Packet.parse(frame, dlt: PacketCapture.linkEthernet)), at: 1_700_000_000),
+                               [FlowEvent(key: key, kind: .opened)], "IPv\(family): and the namer reads a SYN to \(what)")
+            }
+        }
+    }
+
     func testNullLinkFilterTellsDirectionFromAddresses() throws {
         let filter = try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkNull, direction: .sourceAddresses([myV4, myV6])))
         func run(_ frame: [UInt8]) -> UInt32 { Interpreter.run(filter, on: frame) }
