@@ -40,7 +40,9 @@ connectors.
 - `ex-forget`: a kept answer, confirmed or not, has `Forget…`; pressed, it offers `Cancel`
   and `Forget answer`, which deletes the answer. The detail then reads as it would without
   it, and the item can be asked about again. A `First contact` row for the host follows:
-  its line names a kept answer, and loses it when the answer is forgotten.
+  its line names a kept answer, and loses it when the answer is forgotten. A press on any
+  button of the answer's row that follows a change of its buttons within the double-click
+  interval does nothing, so a double press does what one press does.
 - `ex-host`: a host's prompt carries the host and the connection, not who made it.
 - `ex-publisher`: the shipped `claude` rule shows for Anthropic's program only.
 - `ex-planted`: a row another process wrote into the database's rule table is no rule, unless
@@ -168,7 +170,8 @@ Preconditions:
   rows, `script:<dir>/a/updater` confirmed and `script:<dir>/b/updater` not.
 - **Forgetting an answer.** With the fake provider, on the `connect named` row: `Explain`,
   `Confirm`; the detail reads `Model answer, confirmed by you` with `Forget…` as its one
-  button. Press it: `Cancel` and `Forget answer`. `Cancel` puts `Forget…` back and `$V db
+  button. Press it and, with no pause, `Forget answer`: the row still reads `Cancel` and
+  `Forget answer`, and the count below is still 1 (a double press). `Cancel` puts `Forget…` back and `$V db
   "select count(*) from rule where pattern = 'example.com'"` is still 1. `Forget…`, `Forget
   answer`: `No explanation yet.` with `Explain`, and the count is 0. `Explain` again stores a
   new unconfirmed answer: `Model answer, unconfirmed` on a line of its own, and under it
@@ -260,6 +263,11 @@ Preconditions:
 
 ## Gotchas
 
+- The answer's row ignores a press for the double-click interval (half a second unless the
+  user changed it) after its buttons change: when an answer shows, and after `Forget…`,
+  `Cancel`, `Confirm` and `Forget answer`. `ax wait` returns as soon as the label is there,
+  so `sleep 1` before the next press in that row. A press sent sooner reports `pressed` and
+  changes nothing.
 - A database from before `why` and `care` has no columns for them. The shipped rules load
   all the same, since they are read from the app and not from the database, but the copy
   cannot write: `Explain` and `Confirm` fail with `no column named why`. Doctor still reads `ok`, since it

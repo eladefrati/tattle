@@ -1289,6 +1289,42 @@ final class ExplainerTests: XCTestCase {
         XCTAssertNil(ExplainSection.unkept(kept, givenFor: nil, request: nothing), "the knowledge base speaks for a kept one")
     }
 
+    /// Forget's buttons stand at the row's leading edge, the ones that ask and keep at its
+    /// trailing one, and a press on Forget leaves only its own two.
+    func testAnAnswersRowHoldsForgetApartFromTheButtonsThatAskAndKeep() {
+        typealias Controls = ExplainSection.Controls
+        let unkept = Rule(kind: .host, pattern: "a.example", purpose: "x", source: .llm)
+        var kept = unkept
+        kept.id = 1
+        var confirmed = kept
+        confirmed.confirmed = Date()
+        var shipped = Rule(kind: .host, pattern: "a.example", purpose: "x", source: .builtin)
+        shipped.id = 2
+        for forgetting in [false, true] {
+            XCTAssertEqual(ExplainSection.controls(for: nil, forgetting: forgetting), Controls(leading: [], trailing: [.explain]))
+            XCTAssertEqual(ExplainSection.controls(for: unkept, forgetting: forgetting), Controls(leading: [], trailing: [.askAgain]), "nothing to forget")
+            XCTAssertEqual(ExplainSection.controls(for: shipped, forgetting: forgetting), Controls(leading: [], trailing: []), "not the user's to delete")
+        }
+        XCTAssertEqual(ExplainSection.controls(for: kept, forgetting: false), Controls(leading: [.forget], trailing: [.askAgain, .confirm]))
+        XCTAssertEqual(ExplainSection.controls(for: confirmed, forgetting: false), Controls(leading: [.forget], trailing: []))
+        for rule in [kept, confirmed] {
+            XCTAssertEqual(ExplainSection.controls(for: rule, forgetting: true), Controls(leading: [.cancel, .forgetAnswer], trailing: []))
+        }
+    }
+
+    /// A press that follows a change of the row's buttons within a double click's time is the
+    /// second half of one, aimed at the button that stood there before: it does not count.
+    func testAPressStraightAfterTheRowsButtonsChangeDoesNotCount() {
+        let changed = Date(timeIntervalSince1970: 1_000)
+        for later in [0, 0.2, 0.49] {
+            XCTAssertFalse(ExplainSection.counts(pressAt: changed + later, changed: changed, interval: 0.5), "\(later) s")
+        }
+        for later in [0.5, 0.6, 30] {
+            XCTAssertTrue(ExplainSection.counts(pressAt: changed + later, changed: changed, interval: 0.5), "\(later) s")
+        }
+        XCTAssertTrue(ExplainSection.counts(pressAt: changed, changed: .distantPast, interval: 0.5), "a row that has not changed")
+    }
+
     /// Asked again, a host whose name now goes out as a placeholder gets an answer that is not
     /// kept. The view shows it in place of the unconfirmed answer it was asked to replace,
     /// which stays in the knowledge base. A confirmed answer and a shipped rule speak first,

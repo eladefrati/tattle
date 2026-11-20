@@ -19,6 +19,8 @@ struct ExplainSection: View {
     @State private var error: String?
     /// Forget was pressed once: the next press deletes the kept answer.
     @State private var forgetting = false
+    /// When the row's buttons last changed.
+    @State private var changed = Date.distantPast
 
     var body: some View {
         Card {
@@ -41,53 +43,28 @@ struct ExplainSection: View {
                 question("Should I care", nil)
                 RowLine()
             }
+            let controls = Self.controls(for: rule, forgetting: forgetting)
             VStack(alignment: .leading, spacing: 5) {
-                // A kept answer, confirmed or not: one shown only in this view has nothing to
-                // forget, and no other rule is the user's to delete. What it is stands on a line
-                // of its own, and Forget at the row's other end from the buttons that keep it.
-                let isKept = rule.map { $0.source == .llm && $0.id != nil } ?? false
-                if isKept {
-                    Text(rule.map(provenance) ?? "No explanation yet.")
+                // What a kept answer is stands on a line of its own, and Forget at the row's
+                // other end from the buttons that keep it.
+                if let rule, !controls.leading.isEmpty {
+                    Text(provenance(rule))
                         .font(PanelFont.small)
                         .foregroundStyle(PanelColor.sub)
                 }
                 HStack(spacing: 8) {
-                    if isKept, let rule {
-                        if forgetting {
-                            Button("Cancel") { forgetting = false }
-                                .buttonStyle(PanelButtonStyle(height: 22))
-                            Button("Forget answer") { forget(rule) }
-                                .buttonStyle(PanelButtonStyle(kind: .danger, height: 22))
-                        } else {
-                            Button("Forget\u{2026}") { forgetting = true }
-                                .buttonStyle(PanelButtonStyle(height: 22))
-                                .disabled(busy)
-                        }
-                    } else {
+                    if controls.leading.isEmpty {
                         Text(rule.map(provenance) ?? "No explanation yet.")
                             .font(PanelFont.small)
                             .foregroundStyle(PanelColor.sub)
+                    } else {
+                        ForEach(controls.leading, id: \.self) { button($0) }
                     }
                     Spacer(minLength: 0)
                     if busy { ProgressView().controlSize(.small) }
-                    if let rule {
-                        if !(forgetting && isKept) {
-                            if rule.source == .llm && rule.confirmed == nil {
-                                Button("Ask again") { ask() }
-                                    .buttonStyle(PanelButtonStyle(height: 22))
-                                    .disabled(busy || !providerConfigured)
-                            }
-                            if rule.source == .llm && rule.confirmed == nil && rule.id != nil {
-                                Button("Confirm") { confirm(rule) }
-                                    .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
-                            }
-                        }
-                    } else {
-                        Button("Explain") { ask() }
-                            .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
-                            .disabled(busy || !providerConfigured)
-                    }
+                    ForEach(controls.trailing, id: \.self) { button($0) }
                 }
+                .onChange(of: controls) { changed = Date() }
                 .frame(minHeight: 22)
                 if rule == nil && !providerConfigured {
                     Text("Choose a provider in Settings to ask a model.")
@@ -106,6 +83,69 @@ struct ExplainSection: View {
             .padding(.vertical, 8)
         }
         .task(id: request) { await load() }
+    }
+
+    /// A button of the answer's row.
+    enum Control: Hashable {
+        case explain, askAgain, confirm, forget, cancel, forgetAnswer
+    }
+
+    /// The row's buttons: Forget's at its leading edge, the others at its trailing one.
+    struct Controls: Equatable {
+        var leading: [Control]
+        var trailing: [Control]
+    }
+
+    /// The buttons an answer's row holds. Only a kept answer, confirmed or not, can be
+    /// forgotten: one shown only in this view has nothing to forget, and no other rule is the
+    /// user's to delete. Pressed once, Forget leaves only its own two buttons.
+    static func controls(for rule: Rule?, forgetting: Bool) -> Controls {
+        guard let rule else { return Controls(leading: [], trailing: [.explain]) }
+        let isModels = rule.source == .llm
+        let isKept = isModels && rule.id != nil
+        if isKept && forgetting { return Controls(leading: [.cancel, .forgetAnswer], trailing: []) }
+        let asks: [Control] = isModels && rule.confirmed == nil ? (isKept ? [.askAgain, .confirm] : [.askAgain]) : []
+        return Controls(leading: isKept ? [.forget] : [], trailing: asks)
+    }
+
+    /// Whether a press counts. One that follows a change of the row's buttons sooner than a
+    /// double click's second press was aimed at the button that stood there before.
+    static func counts(pressAt now: Date, changed: Date, interval: TimeInterval) -> Bool {
+        now.timeIntervalSince(changed) >= interval
+    }
+
+    /// Runs a button's action unless the press came straight after the row's buttons changed:
+    /// a double press then does what one press does, whichever button took the first one's place.
+    private func press(_ action: () -> Void) {
+        guard Self.counts(pressAt: Date(), changed: changed, interval: NSEvent.doubleClickInterval) else { return }
+        action()
+    }
+
+    @ViewBuilder
+    private func button(_ control: Control) -> some View {
+        switch control {
+        case .explain:
+            Button("Explain") { press { ask() } }
+                .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
+                .disabled(busy || !providerConfigured)
+        case .askAgain:
+            Button("Ask again") { press { ask() } }
+                .buttonStyle(PanelButtonStyle(height: 22))
+                .disabled(busy || !providerConfigured)
+        case .confirm:
+            Button("Confirm") { press { if let rule { confirm(rule) } } }
+                .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
+        case .forget:
+            Button("Forget\u{2026}") { press { forgetting = true } }
+                .buttonStyle(PanelButtonStyle(height: 22))
+                .disabled(busy)
+        case .cancel:
+            Button("Cancel") { press { forgetting = false } }
+                .buttonStyle(PanelButtonStyle(height: 22))
+        case .forgetAnswer:
+            Button("Forget answer") { press { if let rule { forget(rule) } } }
+                .buttonStyle(PanelButtonStyle(kind: .danger, height: 22))
+        }
     }
 
     /// One question with its answer, or with the words that stand in for one.
