@@ -160,6 +160,24 @@ final class RedactorTests: XCTestCase {
         XCTAssertEqual(cut("/Users/username/Users/Shared"), "<home>/<folders>/Shared", "no account")
         XCTAssertEqual(cut("/Users/username/Volumes/ClientNAS/bin/tool"), "<home>/<folders>/tool", "a folder between is not sent in any case")
 
+        // A path is read as the file system reads it: a repeated or a trailing slash and a
+        // "." part name nothing.
+        XCTAssertEqual(cut("/Users/./username//dev/acme/./x/"), "<home>/<folders>/x")
+        XCTAssertEqual(cut("/Users/username/Volumes/ClientNAS/."), "<home>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Users/username/./Volumes//ClientNAS/"), "<home>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Volumes/./ClientNAS/tool"), "/Volumes/<volume>/tool")
+        XCTAssertEqual(cut("/Users/username/Client (Acme)/./Volumes/Spare Disk"), "<home>/<folders>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Users/username/dev/./api//users/./server"), "<home>/<folders>/server")
+        // As it is written, a path in text starts after a slash too, and has its name
+        // replaced there: so has this one.
+        XCTAssertEqual(cut("/Users/username/mnt//Volumes/ClientNAS"), "<home>/<folders>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Users/username/dev//Users/someone"), "<home>/<folders>/Users/<other-user>")
+        XCTAssertEqual(cut("/Users/username/dev//Users/Shared"), "<home>/<folders>/Shared", "no account")
+        XCTAssertEqual(cut("/Volumes//Users/someone"), "/Volumes/<volume>/<other-user>", "the disk is called Users, or the path starts again")
+        XCTAssertEqual(cut("/System//Volumes/Spare/Users/other/dev/x"), "/System/Volumes/<volume>/Users/<other-user>/<folders>/x")
+        // The home further in, on a disk mounted in a folder.
+        XCTAssertEqual(cut("/Users/username/mnt/Volumes/Spare/Users/username/Volumes/ClientNAS"), "<home>/<folders>/Volumes/<volume>")
+
         for whole in ["/Applications/Acme Tools.app/Contents/MacOS/Acme", "/opt/homebrew/Cellar/postgresql@16/16.4/bin/postgres",
                       "/Library/Application Support/Acme/bin/tool", "/usr/libexec/trustd", "/System/Volumes/Preboot/x/y/z",
                       "/private/tmp/build/a/b/tool", "/opt/app/Users/x/y/z", "relative/a/b/c", ""] {

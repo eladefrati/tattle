@@ -148,12 +148,20 @@ struct Redactor: Sendable {
     /// with an email address): the path goes out as its root, macOS's own folders at its start
     /// and its last part, "<home>/Library/Application Support/<folders>/tool". Any other path
     /// is where software is installed and goes out whole.
+    ///
+    /// The path's parts are the file system's: a repeated or a trailing slash and a "." part
+    /// name nothing.
     func cut(path: String) -> String {
         guard path.hasPrefix("/") else { return path }
         let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
         let homeParts = home.split(separator: "/").map(String.init)
-        let all = path.split(separator: "/").map(String.init)
+        let written = path.split(separator: "/").filter { $0 != "." }
+        let all = written.map(String.init)
         var rest = all[...]
+        // The path up to one of its parts, as it is written and as the file system reads it.
+        func leads(to index: Int) -> [String] {
+            [String(path[..<written[index].startIndex]), "/" + all[..<index].map { $0 + "/" }.joined()]
+        }
         // Whether the path goes on through the home folder, in any case, as APFS reads a path.
         func dropHome() -> Bool {
             guard !homeParts.isEmpty, rest.count >= homeParts.count, zip(rest, homeParts).allSatisfy(same) else { return false }
@@ -168,7 +176,8 @@ struct Redactor: Sendable {
             // A disk's root, then an account on it: the boot disk's firmlink keeps its name.
             var isPersonal = false
             if rest.count >= 3, same(rest[rest.startIndex], "System"), same(rest[rest.startIndex + 1], "Volumes") {
-                root = "/System/Volumes/" + rest[rest.startIndex + 2]
+                // macOS's own name for the disk, unless the passes over text read another's there.
+                root = "/System/Volumes/" + (leads(to: rest.startIndex + 2).lazy.compactMap(nameRead).first ?? rest[rest.startIndex + 2])
                 rest = rest.dropFirst(3)
             } else if rest.count >= 2, same(rest[rest.startIndex], "Volumes") {
                 (root, isPersonal) = ("/Volumes/<volume>", true)
@@ -196,34 +205,40 @@ struct Redactor: Sendable {
         }
         var tail = rest.count > 1 ? ["<folders>", rest[rest.endIndex - 1]] : Array(rest)
         // Straight inside a Users or a Volumes folder the last part is an account's or a
-        // disk's name where a path in any text has it replaced (`pathStart`): when that
-        // folder stands straight after the home, after a disk's own folder, or after a folder
-        // whose name ends in a mark. Inside any other folder of the name ("api/users/server")
-        // it is the file's own name. /Users/Shared is no account.
-        if rest.count > 1 {
-            let at = rest.endIndex - 2
-            let (parent, last) = (all[at], all[at + 1])
-            let isAfterHome = root.hasSuffix("<home>") && kept.isEmpty && rest.count == 2
-            let isAfterDisk = at >= 2 && same(all[at - 2], "Volumes")
-            let isAfterMark = at >= 1 && all[at - 1].range(of: "[\\w.-]$", options: .regularExpression) == nil
-            if isAfterHome || isAfterDisk || isAfterMark {
-                let name = same(parent, "Volumes") ? "<volume>" : same(parent, "Users") && !same(last, "Shared") ? "<other-user>" : nil
-                if let name { tail = (rest.count > 2 ? ["<folders>"] : []) + [parent, name] }
+        // disk's name where the passes over text read one: when that folder stands straight
+        // after the home, after a disk's own folder, or after a mark, which a second slash
+        // is. The passes themselves are asked, so the two cannot differ, and about each way
+        // to read the path: as it is written, which is how they would have met it, as the
+        // file system reads it, and with the home where this found it. One yes replaces the
+        // part, whole and whatever it holds. Inside any other folder of the name
+        // ("api/users/server") the last part is the file's own name, and /Users/Shared is no
+        // account.
+        let isNamesFolder = all.count > 1 && all[all.count - 2].range(
+            of: "^(?:Users|Volumes)$", options: [.regularExpression, .caseInsensitive]) != nil
+        if isNamesFolder, let last = rest.last {
+            var ways = leads(to: all.count - 1)
+            if root.hasSuffix("<home>") { ways.append("<home>/" + (kept + rest.dropLast()).map { $0 + "/" }.joined()) }
+            if let name = ways.lazy.compactMap(nameRead).first, !(name == "<other-user>" && same(last, "Shared")) {
+                // The root has taken the folder where it read it as a disk's or an account's name.
+                let folder = rest.count > 1 ? (rest.count > 2 ? ["<folders>"] : []) + [rest[rest.endIndex - 2]] : []
+                tail = folder + [name]
             }
         }
         return ([root] + kept + tail).joined(separator: "/")
+    }
+
+    /// The placeholder the passes over text put for a name that stands straight after `lead`,
+    /// the start of a path up to a slash: an account's or a disk's, where they read one.
+    private func nameRead(after lead: String) -> String? {
+        let read = redactFolders(redactHome(lead) + "x")
+        return ["<volume>", "<other-user>"].first(where: read.hasSuffix)
     }
 
     func redact(_ text: String, as context: Context) -> String {
         let captured = context != .instructions
         var out = text
         // Home path before username: the path contains the username.
-        // On a path boundary: home "/Users/u" must not take the front off "/Users/user/...".
-        // In any case, as APFS reads a path.
-        if !home.isEmpty {
-            let pattern = Self.pathStart + NSRegularExpression.escapedPattern(for: home) + Self.pathEnd
-            out = out.replacingOccurrences(of: pattern, with: "<home>", options: [.regularExpression, .caseInsensitive])
-        }
+        out = redactHome(out)
         // Before any name: a disk's or a folder's name can hold the login.
         if captured { out = redactFolders(out) }
         // Before the login: an address that starts with it would keep its domain.
@@ -240,6 +255,14 @@ struct Redactor: Sendable {
         if context == .host { out = redactPrivateHosts(out) }
         out = redactUsername(out, in: context)
         return Self.redactAddresses(out, spelledWithHyphens: captured)
+    }
+
+    /// On a path boundary: home "/Users/u" must not take the front off "/Users/user/...".
+    /// In any case, as APFS reads a path.
+    private func redactHome(_ text: String) -> String {
+        guard !home.isEmpty else { return text }
+        let pattern = Self.pathStart + NSRegularExpression.escapedPattern(for: home) + Self.pathEnd
+        return text.replacingOccurrences(of: pattern, with: "<home>", options: [.regularExpression, .caseInsensitive])
     }
 
     /// An email address, whoever's: a cloud drive names its folder with one. The domain's last

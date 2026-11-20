@@ -276,9 +276,13 @@ A name is replaced only where Tattle can tell it from an ordinary word, so some 
   does an address at a bare name (`name@localhost`). Anything of that shape is replaced,
   an address or not: `pkg@latest.tgz` reads `<email>`.
 - A `Users` or a `Volumes` folder is read as holding accounts or disks only at the top of
-  your home or of a disk, or after a folder whose name ends in a space or in punctuation
-  other than `.`, `-` and `_`. Anywhere else (`~/dev/api/users/server`) it is an ordinary
-  folder, and the last part is sent as it is.
+  your home or of a disk, after a folder whose name ends in a space or in punctuation
+  other than `.`, `-` and `_`, or after a repeated slash. Anywhere else
+  (`~/dev/api/users/server`) it is an ordinary folder, and the last part is sent as it is.
+  Where the two readings differ the rule errs toward replacing: a path is read both as it is
+  written and as the file system reads it, without its repeated slashes and `.` parts, and
+  the last part is replaced whatever it holds, so `~/Users/Shared Stuff` and
+  `~/Volumes/(Backup)` go out as placeholders too.
 - A path loses its folders only where Tattle holds it whole: a program's, a plist's, a file a
   startup item watches. A path inside other text, such as a reason macOS gave, keeps them.
   There, a disk's name with spaces or punctuation is replaced whole only while the disk is
