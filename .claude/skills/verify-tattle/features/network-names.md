@@ -17,7 +17,8 @@ there is no name. History keeps the outcome: `name` and `nameSource` (`sni`, `qu
   in the row, and the detail says `Name from a DNS reply for the address`.
 - `net-group`: a group row per app, opening a detail with facts and its connections.
 - `net-named`: a connection detail with `Destination`, `Address`, and `Name from` (for
-  example `the HTTP request`).
+  example `what the program asked for in its HTTP request`): a name off the wire is the
+  program's word, which nothing checks against the address.
 - `net-unnamed`: a connection detail with `No name` and the reason: `the connection did
   not start with a TLS or HTTP handshake`, `no complete handshake came in the connection's
   first 20 seconds`, `part of the handshake was missed`, `the handshake carried no server name`,
@@ -78,8 +79,8 @@ Preconditions:
   `<github ip>:22, new, TCP · connected · nc, ...` for the other two. Use `$V ax scroll
   down` if they are below the fold.
 - **Named.** Press `--prefix "example.com, "`, `$V ax wait "Name from"`, `$V save
-  named-detail`. Facts: `Destination example.com`, `Name from the HTTP request`, `Process
-  nc (pid <pid>)`, `App <terminal>`.
+  named-detail`. Facts: `Destination example.com`, `Name from what the program asked for in
+  its HTTP request`, `Process nc (pid <pid>)`, `App <terminal>`.
 - **Unnamed, not a handshake.** `Back`, press `--prefix "<github ip>:22, "`, check the
   `Process nc (pid ...)` fact against the garbage pid (else `Back` and open the other
   row with `$V ax dump` to find it), `$V save garbage-detail`. Facts: `No name

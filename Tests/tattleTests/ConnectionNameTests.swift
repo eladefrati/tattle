@@ -54,7 +54,9 @@ final class ConnectionNameTests: XCTestCase {
         facts = Dictionary(named.facts(now: t0).map { ($0.name, $0.value) }, uniquingKeysWith: { a, _ in a })
         XCTAssertEqual(facts["Destination"], "www.apple.com")
         XCTAssertEqual(facts["Address"], "17.253.144.10:443")
-        XCTAssertEqual(facts["Name from"], "the connection's TLS handshake")
+        XCTAssertEqual(facts["Name from"], "what the program asked for in its TLS handshake", "the program's word, not what the address is")
+        XCTAssertEqual(NameSource.quic.text, "what the program asked for in its QUIC handshake")
+        XCTAssertEqual(NameSource.http.text, "what the program asked for in its HTTP request")
 
         let relayed = LiveConnection(connection: connection("17.253.144.10"), owner: owner, isNew: false,
                                      outcome: .named(ConnectionName(name: "mask.icloud.com", source: .quic, kind: .relay)))

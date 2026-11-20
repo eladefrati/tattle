@@ -1,6 +1,8 @@
 import Foundation
 
-/// Which packet named a connection, in order of preference (ADR-0001).
+/// Which packet named a connection, in order of preference (ADR-0001). The first three are
+/// the program's own word: the server it asked for, which nothing checks against the
+/// address it connected to, so `text` says who said it.
 enum NameSource: String, Sendable {
     /// The server name in a TLS ClientHello over TCP.
     case sni
@@ -14,9 +16,9 @@ enum NameSource: String, Sendable {
 
     var text: String {
         switch self {
-        case .sni: "the connection's TLS handshake"
-        case .quic: "the connection's QUIC handshake"
-        case .http: "the HTTP request"
+        case .sni: "what the program asked for in its TLS handshake"
+        case .quic: "what the program asked for in its QUIC handshake"
+        case .http: "what the program asked for in its HTTP request"
         case .dns: "a DNS reply for the address"
         }
     }
