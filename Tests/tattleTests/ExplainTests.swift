@@ -874,6 +874,33 @@ final class PromptTests: XCTestCase {
         XCTAssertEqual(facts[0].value, program, "the panel still has it")
     }
 
+    /// A name is written by whoever named the item, and nothing else bounds it: a megabyte of
+    /// title, label or server name would all go out. Each value is cut at the limit, after it
+    /// is redacted, so the cut never leaves half a name the redaction would have taken.
+    func testAValueLongerThanTheLimitIsCut() throws {
+        let redactor = Redactor(home: "/Users/username", username: "username", machineNames: [])
+        let limit = Prompt.valueLimit
+        func sent(_ key: String, _ value: String) throws -> (key: String, value: String) {
+            let request = ExplainRequest(kind: .launchItem, key: key, facts: [Fact(name: "Runs", value: value)])
+            let data = try capturedData(in: Prompt.build(instructions: "x", request: request, redactor: redactor))
+            return (try XCTUnwrap((data["item"] as? [String: String])?["key"]), try XCTUnwrap((data["facts"] as? [[String: String]])?.first?["value"]))
+        }
+        let long = try sent(String(repeating: "k", count: 100_000), String(repeating: "v", count: 100_000))
+        XCTAssertEqual(long.key, String(repeating: "k", count: limit) + " <cut>")
+        XCTAssertEqual(long.value, String(repeating: "v", count: limit) + " <cut>")
+        let exact = try sent(String(repeating: "k", count: limit), String(repeating: "v", count: limit))
+        XCTAssertEqual(exact.key.count, limit, "a value at the limit goes whole")
+        XCTAssertEqual(exact.value.count, limit)
+
+        let straddling = try sent("x", String(repeating: "v", count: limit - 8) + " /Users/username/Clients")
+        XCTAssertEqual(straddling.value, String(repeating: "v", count: limit - 8) + " <home>/ <cut>", "redacted, then cut")
+        XCTAssertFalse(straddling.value.contains("Users"))
+
+        // One letter under thousands of combining marks is one character, and thousands of scalars.
+        let stacked = try sent("x", "a" + String(repeating: "\u{301}", count: 100_000))
+        XCTAssertEqual(stacked.value.unicodeScalars.count, limit + " <cut>".unicodeScalars.count)
+    }
+
     func testPanelOnlyFactsAndPromptValues() throws {
         let facts = [
             Fact(name: "Working in", value: "~/dev/client-acme", inPrompt: false),
@@ -1313,6 +1340,16 @@ final class ExplainerTests: XCTestCase {
         }
         let kept = try await explainer.ask(ExplainRequest(kind: .host, key: "www.example.com"))
         XCTAssertNotNil(kept.id, "a public name goes out as it is, and its answer is kept")
+    }
+
+    /// The cut is the prompt's alone: the answer is kept under the item's whole key.
+    func testAnAnswerForALongKeyIsKeptUnderTheWholeKey() async throws {
+        let provider = FakeProvider(output: #"{"purpose":"x","risk":"low","confidence":"low"}"#)
+        let host = String(repeating: "a", count: Prompt.valueLimit + 50) + ".example.com"
+        let rule = try await explainer(provider).ask(ExplainRequest(kind: .host, key: host))
+        XCTAssertNotNil(rule.id)
+        XCTAssertEqual(rule.pattern, host)
+        XCTAssertFalse(try XCTUnwrap(provider.seen.prompts.first).contains(host))
     }
 
     func testEachAskRedactsTheNamesOfThatMoment() async throws {

@@ -133,6 +133,8 @@ Preconditions:
     changes`, and `Plist` `<home>/Library/LaunchAgents/<label>.plist`, macOS's own folders kept;
   - a plist labelled `proof for name@example.com`: the key reads `proof for <email>`; one
     labelled `com.proof.tool@1.2.3` stays whole;
+  - a plist whose label is 600 letters: the key is its first 500 and ` <cut>`, and the
+    answer is kept under the whole label;
   - `prompt.instructions` saved with the Mac's name and the login in it: the prompt's first
     line has `<machine>` and `<user>`. Saved as `Steps 10-20-30-40 on 10.0.0.5 for <login> at
     /USERS/<LOGIN>/x and com.<login>.helper.`: it reads `Steps 10-20-30-40 on <private-ip> for

@@ -19,19 +19,25 @@ enum Prompt {
     static let dataBegin = "BEGIN CAPTURED DATA (JSON)"
     static let dataEnd = "END CAPTURED DATA"
 
+    /// The most of one value a prompt carries, in Unicode scalars. A name is written by whoever
+    /// named the item (a program, a server, a label's author) and nothing else bounds it. The
+    /// values the app writes itself are far shorter.
+    static let valueLimit = 500
+
     /// The item and facts go out as one JSON line between two markers. JSON escapes line
     /// breaks and quotes inside a value, and the three line separators it leaves as they are
     /// are escaped here, so a value cannot pass for a fact or for the end of the block. The
     /// key and the fact values get one redaction: a fact usually repeats the key, so a key
-    /// redacted less would undo it. A path a fact holds whole is cut first. The default
-    /// instructions hold nothing of the user's and go out as written; edited ones can name
-    /// the user.
+    /// redacted less would undo it. A path a fact holds whole is cut first, and a value past
+    /// the limit is cut last, so the cut never leaves half a name the redaction would have
+    /// taken. The default instructions hold nothing of the user's and go out as written;
+    /// edited ones can name the user.
     static func build(instructions: String, request: ExplainRequest, redactor: Redactor) -> String {
         let context = Redactor.Context(request.kind)
         let captured: [String: Any] = [
-            "item": ["kind": label(for: request.kind), "key": redactor.redact(key: request.key, of: request.kind)],
+            "item": ["kind": label(for: request.kind), "key": limited(redactor.redact(key: request.key, of: request.kind))],
             "facts": request.facts.filter(\.inPrompt).map {
-                ["name": $0.name, "value": redactor.redact($0.promptValue ?? $0.value, paths: $0.paths, as: context)]
+                ["name": $0.name, "value": limited(redactor.redact($0.promptValue ?? $0.value, paths: $0.paths, as: context))]
             },
         ]
         // The input is only strings, so serialization cannot fail.
@@ -47,6 +53,14 @@ enum Prompt {
             "Answer with one JSON object matching this schema:",
             OutputContract.schema,
         ].joined(separator: "\n")
+    }
+
+    /// A value's first `valueLimit` scalars, marked as cut. Counted in scalars: one character
+    /// can hold any number of combining marks.
+    private static func limited(_ value: String) -> String {
+        let scalars = value.unicodeScalars
+        guard scalars.count > valueLimit else { return value }
+        return String(String.UnicodeScalarView(scalars.prefix(valueLimit))) + " <cut>"
     }
 
     /// Next line, line separator and paragraph separator, which JSON allows unescaped inside

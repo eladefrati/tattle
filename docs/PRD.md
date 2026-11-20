@@ -225,7 +225,7 @@ replaced with placeholders. A path held whole (a program's, a plist's, a watched
 a home folder or on another disk goes out as its root, macOS's own folders at its start and
 its last part; any other path goes out whole. A host name only the user's network resolves
 (under a private ending such as `.local`, under a search domain, or with no dot) goes out
-as a placeholder, whatever its address. A name is replaced only where it can be told
+as a placeholder, whatever its address. A value longer than 500 characters is cut there. A name is replaced only where it can be told
 from an ordinary word, so some stay; the README lists which. The default instructions go out as written. Edited
 instructions lose the home path in any case, the username, the Mac's names with either
 apostrophe, and private or local addresses unless spelled with hyphens; a dotted name such

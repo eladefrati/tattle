@@ -238,7 +238,8 @@ anywhere else, such as `/Applications` or `/opt`, is where software is installed
 sent whole. A host name that only your network resolves is sent as a placeholder, even at
 a public address: a name under `.local`, `.lan`, `.internal`, `.home.arpa`, `.home`, `.corp`
 or `.localdomain` goes out as `<private-host>` with that ending, and a name under one of
-your network's search domains, or with no dot at all, as `<private-host>` alone.
+your network's search domains, or with no dot at all, as `<private-host>` alone. A value
+longer than 500 characters is cut there.
 
 <details>
 <summary>Where a name stays in</summary>
