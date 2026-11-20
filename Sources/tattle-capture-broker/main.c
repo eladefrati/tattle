@@ -6,9 +6,10 @@
 // requests keeps only the connections it has answered and not yet closed.
 //
 //   tattle-capture-broker --requirement <code requirement> --uid <uid> --service <name>
-//       Serves the Mach service launchd holds under <name> and exits after a minute idle;
-//       launchd starts it again on the next message. Tests run it the same way, as an agent in
-//       the user's own launchd domain.
+//       Serves the Mach service launchd holds under <name> and exits a minute after it started
+//       or after the last request it accepted, whichever is later; launchd starts it again on
+//       the next message. Tests run it the same way, as an agent in the user's own launchd
+//       domain.
 //
 // Protocol: a dictionary whose "interface" is a string. The reply's "status" is 0 to 3; for 0
 // it carries the descriptor under "descriptor", for 3 the errno under "errno".
@@ -323,11 +324,12 @@ int main(int argc, char **argv) {
                 return;
             }
             taken = true;
-            // Another account's messages must not keep a root process running.
-            if (xpc_connection_get_euid(peer) == uid) {
+            bool allowed = serve(peer, message, uid, requirement);
+            // Only a caller the broker accepts keeps a root process running; any process of any
+            // account can send a request it refuses.
+            if (allowed) {
                 dispatch_source_set_timer(idle, dispatch_time(DISPATCH_TIME_NOW, idle_seconds * NSEC_PER_SEC), DISPATCH_TIME_FOREVER, NSEC_PER_SEC);
             }
-            bool allowed = serve(peer, message, uid, requirement);
             answered = linger(peer, allowed ? &accepted : &refused);
         });
         xpc_connection_activate(peer);

@@ -656,6 +656,40 @@ final class CaptureBrokerTests: XCTestCase {
         XCTAssertEqual(broker.runs, 1)
     }
 
+    /// Only a request the broker accepts puts its idle exit off: refused ones, even from the
+    /// installing user, cannot keep a root process running. Two brokers for this user, each
+    /// asked at once and again half a minute later; the one that refused is gone a minute after
+    /// it started, the one that accepted still runs. Opt-in like the test above: set
+    /// TATTLE_BROKER_IDLE.
+    func testOnlyAnAcceptedRequestPutsTheIdleExitOff() throws {
+        guard ProcessInfo.processInfo.environment["TATTLE_BROKER_IDLE"] != nil else {
+            throw XCTSkip("set TATTLE_BROKER_IDLE to wait out the broker's idle exit")
+        }
+        let hardened = try caller(.hardened)
+        let refusing = try runBroker(requirement: nobody)
+        let accepting = try runBroker(requirement: hardened.requirement)
+        func askBoth() throws {
+            XCTAssertThrowsError(try CaptureBroker.request(interface: "en0", service: refusing.service)) {
+                XCTAssertEqual($0 as? CaptureBroker.RequestError, .refused)
+            }
+            XCTAssertTrue(Self.accepted.contains(try ask(hardened, service: accepting.service)))
+        }
+        let started = Date()
+        try askBoth()
+        let refusingPid = try XCTUnwrap(refusing.pid, "launchd started the refusing broker")
+        let acceptingPid = try XCTUnwrap(accepting.pid, "launchd started the accepting broker")
+        usleep(useconds_t((30 - Date().timeIntervalSince(started)) * 1_000_000))
+        try askBoth()
+        XCTAssertEqual(refusing.pid, refusingPid)
+        XCTAssertEqual(accepting.pid, acceptingPid)
+
+        usleep(useconds_t((64 - Date().timeIntervalSince(started)) * 1_000_000))
+        XCTAssertNil(refusing.pid, "a refused request put the idle exit off")
+        XCTAssertEqual(accepting.pid, acceptingPid, "an accepted request did not put the idle exit off")
+        XCTAssertEqual(refusing.runs, 1)
+        XCTAssertEqual(accepting.runs, 1)
+    }
+
     /// A request is judged by the process that sent it, not by what its pid runs when the
     /// broker reads it: a sender that execs a program the broker accepts is still refused. The
     /// broker is stopped until the exec is done, so one that judged the pid would accept.
