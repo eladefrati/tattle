@@ -103,7 +103,7 @@ struct FlowEvent: Equatable, Sendable {
 
 /// Turns captured packets into names for connections. Keeps, per flow, only the handshake
 /// bytes until a name is found or ruled out, and of this Mac's DNS queries what their
-/// replies are matched by, until the reply; keeps no packet contents otherwise.
+/// replies are matched by, until the reply or ten seconds; keeps no packet contents otherwise.
 struct FlowNamer: Sendable {
     /// A wire name must arrive within this long, or the DNS map is consulted.
     static let dnsFallbackAfter = 3.0
@@ -242,8 +242,9 @@ struct FlowNamer: Sendable {
             return []
         }
         if p.proto == .udp && p.dstPort == 53 && outbound {
-            // This Mac's query to one of its resolvers, held until its reply comes. It opens
-            // no flow, whatever its bytes look like: a query's id can pass for a QUIC header.
+            // This Mac's query to one of its resolvers, held until its reply comes or it is
+            // too old for one. It opens no flow, whatever its bytes look like: a query's id
+            // can pass for a QUIC header.
             if resolvers.contains(p.dst), let query = DNS.parseQuery(p.payload) {
                 queries.insert(query.question, for: AwaitedQueries.Key(resolver: p.dst, port: p.srcPort, id: query.id), at: ts)
             }
