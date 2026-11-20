@@ -197,23 +197,25 @@ final class SnifferTests: XCTestCase {
         usleep(500_000)
         XCTAssertEqual(opens.withLock { $0 }, ["utun4", "en0"], "the second failure in a row waits, though the route moved again")
 
-        // No default route is not a route elsewhere: there is nothing to reopen at once, so
-        // it says the read failed and looks again after the wait, when a route may be back.
-        let gone = OSAllocatedUnfairLock(initialState: false)
+        // No default route is not a route elsewhere: there is nothing to reopen at once. It
+        // says there is no route, which is why the read failed, and looks again after the
+        // wait, by when one is back here.
+        let back = OSAllocatedUnfairLock<Date?>(initialState: nil)
         let stranded = OSAllocatedUnfairLock<[Sniffer.Status]>(initialState: [])
-        let routeless = Sniffer(open: { _ in
-                                    gone.withLock { $0 = true }
+        let routeless = Sniffer(open: { interface in
+                                    guard interface == "utun4" else { return FakeCapture(linkType: PacketCapture.linkRaw) }
+                                    back.withLock { $0 = Date().addingTimeInterval(0.2) }
                                     return Failing()
                                 },
-                                host: Sniffer.Host(primaryInterface: { gone.withLock { $0 } ? nil : "utun4" }, hardwareAddress: { _ in nil },
-                                                   addresses: { _ in [Self.me] }, resolvers: { [] }, readRetryAfter: 0.3),
+                                host: Sniffer.Host(primaryInterface: { back.withLock { $0 }.map { Date() < $0 ? nil : "en0" } ?? "utun4" },
+                                                   hardwareAddress: { _ in nil }, addresses: { _ in [Self.me] }, resolvers: { [] }, readRetryAfter: 0.4),
                                 onEvents: { _ in }, onStatus: { status in stranded.withLock { $0.append(status) } })
         defer { routeless.stop() }
         routeless.start()
-        XCTAssertTrue(eventually { stranded.withLock { $0 }.count >= 3 })
+        XCTAssertTrue(eventually { stranded.withLock { $0 }.count >= 3 }, "it looks again after the short wait, not the long one for no interface")
         XCTAssertEqual(Array(stranded.withLock { $0 }.prefix(3)),
-                       [.capturing(interface: "utun4"), .unavailable(.read(errno: ENXIO)), .unavailable(.noInterface)],
-                       "the failed read is reported, and the missing route only after the wait")
+                       [.capturing(interface: "utun4"), .unavailable(.noInterface), .capturing(interface: "en0")],
+                       "the missing route is what it reports, not the read that failed for it")
     }
 
     /// A raw-IP capture that delivers its packets on the first read, then nothing.

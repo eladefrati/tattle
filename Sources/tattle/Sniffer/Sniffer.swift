@@ -151,15 +151,22 @@ final class Sniffer: @unchecked Sendable {
                 // An interface that goes away fails its read, and the route is by then on
                 // another, which is opened at once, as when the route moves under a capture
                 // that still reads. Only after the first failure in a row: two interfaces
-                // failing by turns wait like one. With no route at all there is nothing to
-                // open, and the wait below gives one time to come back.
-                if readFailures == 1, let current = host.primaryInterface(), current != interface {
+                // failing by turns wait like one.
+                let current = host.primaryInterface()
+                if readFailures == 1, let current, current != interface {
                     Log.sniffer.notice("the default route moved to \(current, privacy: .public); reopening without a wait")
                     continue
                 }
                 let delay = min(Self.retryAfter, host.readRetryAfter * pow(2, Double(readFailures - 1)))
-                report(.unavailable(error), previous: &lastFailure)
-                Log.sniffer.notice("reopening the capture in \(delay, format: .fixed(precision: 1)) s, after \(readFailures) in a row ended in a failed read")
+                if current == nil {
+                    // With no route at all there is nothing to open: that is why the read
+                    // failed and what to say, and the wait gives a route time to come back.
+                    report(.unavailable(.noInterface), previous: &lastFailure)
+                    Log.sniffer.notice("no default route after a failed read; looking again in \(delay, format: .fixed(precision: 1)) s")
+                } else {
+                    report(.unavailable(error), previous: &lastFailure)
+                    Log.sniffer.notice("reopening the capture in \(delay, format: .fixed(precision: 1)) s, after \(readFailures) in a row ended in a failed read")
+                }
                 wait(delay, shouldStop: shouldStop)
             }
         }
