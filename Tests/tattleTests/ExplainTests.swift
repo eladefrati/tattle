@@ -186,6 +186,17 @@ final class RedactorTests: XCTestCase {
                        "/Users/<other-user>/<folders>/x and /Users/<other-user>/bin/y", "a path not known whole is read as text")
     }
 
+    /// Whoever writes a value picks how many private addresses it holds. The pass that
+    /// replaces them reads the value once, so it takes time in proportion to them.
+    func testReplacingManyPrivateAddressesTakesTimeInProportionToThem() {
+        let folder = String(repeating: "a", count: 100)
+        assertTimeGrowsInProportion(from: 1_000, input: { count in
+            (0..<count).map { "/opt/10.0.\($0 % 250).\($0 % 199 + 1)/\(folder), 8.8.8.8" }.joined(separator: ", ")
+        }, { value in
+            XCTAssertFalse(Redactor.redactAddresses(value).contains("/opt/10."))
+        })
+    }
+
     /// A startup item with no label is known by its plist's path; any other key is a name.
     func testAStartupItemsKeyThatIsAPathIsCut() {
         XCTAssertEqual(redactor.redact(key: "/Users/username/Library/LaunchAgents/Client Acme/sync.plist", of: .launchItem),

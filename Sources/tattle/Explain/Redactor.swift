@@ -378,16 +378,20 @@ struct Redactor: Sendable {
         }
     }
 
+    /// The value is written out once, piece by piece: whoever wrote it picks how many addresses
+    /// it holds, and a copy of the whole for each would take time by their square.
     private static func redactIPv4(_ text: String, forms: [NSRegularExpression]) -> String {
         forms.reduce(text) { text, form in
             let ns = text as NSString
-            var out = text
-            for match in form.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+            var out = ""
+            var end = 0
+            for match in form.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
                 let octets = (1...4).compactMap { Int(ns.substring(with: match.range(at: $0))) }
                 guard isPrivateIPv4(octets) else { continue }
-                out = (out as NSString).replacingCharacters(in: match.range, with: "<private-ip>")
+                out += ns.substring(with: NSRange(location: end, length: match.range.location - end)) + "<private-ip>"
+                end = match.range.location + match.range.length
             }
-            return out
+            return end == 0 ? text : out + ns.substring(from: end)
         }
     }
 
