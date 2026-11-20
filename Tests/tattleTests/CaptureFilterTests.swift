@@ -85,7 +85,7 @@ final class CaptureFilterTests: XCTestCase {
         // Outbound UDP: a client Initial kept, short header and other UDP dropped.
         XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 443, payload: initial)))), snap)
         XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 443, payload: [0x41, 1, 2, 3])))), 0)
-        XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 53, payload: [0x12, 0x34, 0x01, 0x00])))), snap, "a DNS query, which its reply is matched to")
+        XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 53, payload: SnifferParserTests.query)))), snap, "a DNS query, which its reply is matched to")
         XCTAssertEqual(run(ethernet(from: mac, ipv6(from: myV6, to: peerV6, proto: 17, udp(sourcePort: 50000, destinationPort: 443, payload: initial)))), snap)
         // Only a client Initial, long header with the fixed bit, at least 1200 bytes, or a DNS query.
         var rtp = initial
@@ -97,7 +97,7 @@ final class CaptureFilterTests: XCTestCase {
             }
             XCTAssertEqual(out(5004, rtp), 0, "RTP, IPv\(family)")
             XCTAssertEqual(out(443, Array(initial.prefix(1199))), 0, "too small for a client Initial, IPv\(family)")
-            XCTAssertEqual(out(53, initial), snap, "a DNS query, whatever it holds, IPv\(family)")
+            XCTAssertEqual(out(53, initial), 0, "to port 53 and not a DNS query, IPv\(family)")
             XCTAssertEqual(out(53, SnifferParserTests.query), snap, "a DNS query, IPv\(family)")
             XCTAssertEqual(out(5353, SnifferParserTests.query), 0, "not to port 53, IPv\(family)")
             let inbound = udp(sourcePort: 50000, destinationPort: 53, payload: SnifferParserTests.query)
@@ -114,6 +114,58 @@ final class CaptureFilterTests: XCTestCase {
         XCTAssertEqual(run(otherMac + mac + [0x08, 0x06] + [UInt8](repeating: 0, count: 28)), 0, "ARP")
         XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 6, tcp(flags: 0x18, payload: 100), fragmentOffset: 0x0010))), 0)
         XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 1, [8, 0, 0, 0, 0, 0, 0, 0]))), 0, "ICMP")
+    }
+
+    /// Of what this Mac sends to port 53 the namer reads a standard query with one question
+    /// (`DNS.parseQuery`) and nothing else, so that is all the filter copies: whatever else a
+    /// program sends there, a tunnel's packets among it, stays in the kernel.
+    func testOfWhatGoesToPort53OnlyAStandardQueryWithOneQuestionIsCopied() throws {
+        let query = SnifferParserTests.query
+        func changed(_ change: (inout [UInt8]) -> Void) -> [UInt8] {
+            var bytes = query
+            change(&bytes)
+            return bytes
+        }
+        let kept: [(String, [UInt8])] = [
+            ("a query", query),
+            ("recursion desired and authentic data set", changed { $0[2] = 0x01; $0[3] = 0x20 }),
+            ("an OPT record after the question", changed { $0[11] = 1; $0 += [0, 0x00, 0x29, 0x10, 0x00, 0, 0, 0, 0, 0, 0] }),
+        ]
+        let dropped: [(String, [UInt8])] = [
+            ("a reply", changed { $0[2] |= 0x80 }),
+            ("another operation", changed { $0[2] = 0x11 }),
+            ("two questions", changed { $0[5] = 2 }),
+            ("no question", changed { $0[5] = 0 }),
+            ("cut before the question count", Array(query.prefix(5))),
+            ("a tunnel's full packet", [0x04, 0, 0, 0, 0x9a, 0x3c] + [UInt8](repeating: 0x5a, count: 1394)),
+        ]
+        /// The same IPv4 packet with four bytes of options, which move everything after them.
+        func withOptions(_ ip: [UInt8]) -> [UInt8] {
+            var bytes = ip
+            bytes[0] = 0x46
+            bytes[3] += 4
+            bytes.insert(contentsOf: [1, 1, 1, 1], at: 20)
+            return bytes
+        }
+        let mine = CaptureFilter.Direction.sourceAddresses([myV4, myV6])
+        let links: [(String, CaptureFilter, ([UInt8]) -> [UInt8])] = [
+            ("Ethernet", try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkEthernet, direction: .hardwareAddress(mac))), { self.ethernet(from: self.mac, $0) }),
+            ("null link", try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkNull, direction: mine)), nullLink),
+            ("raw IP", try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkRaw, direction: mine)), { $0 }),
+        ]
+        for (link, filter, frame) in links {
+            for (what, payload) in kept + dropped {
+                let datagram = udp(sourcePort: 50000, destinationPort: 53, payload: payload)
+                let v4 = ipv4(from: myV4, to: peerV4, proto: 17, datagram)
+                let packets = [("IPv4", v4), ("IPv4 with options", withOptions(v4)), ("IPv6", ipv6(from: myV6, to: peerV6, proto: 17, datagram))]
+                let wanted = kept.contains { $0.0 == what } ? CaptureFilter.snapLength : 0
+                for (family, packet) in packets {
+                    XCTAssertEqual(Interpreter.run(filter, on: frame(packet)), wanted, "\(what), \(family) on \(link)")
+                }
+                if DNS.parseQuery(payload[...]) != nil { XCTAssertEqual(wanted, CaptureFilter.snapLength, "\(what) is read by the namer, so it is copied") }
+            }
+        }
+        for (what, payload) in kept { XCTAssertNotNil(DNS.parseQuery(payload[...]), "\(what) is one the namer reads") }
     }
 
     /// The filter passes any datagram from port 53 as a DNS reply, whatever its addresses, so

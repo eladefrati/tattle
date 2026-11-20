@@ -7,7 +7,8 @@ import Foundation
 ///   the HTTP request line);
 /// - outbound UDP datagrams that can be a QUIC client Initial: at least 1200 bytes of
 ///   payload, first byte a long header with the fixed bit;
-/// - outbound UDP to port 53 (this Mac's DNS queries) and inbound UDP from port 53 (the
+/// - outbound UDP to port 53 that starts as a standard DNS query with one question (this
+///   Mac's DNS queries, as `DNS.parseQuery` reads them) and inbound UDP from port 53 (the
 ///   replies, which are taken only when they answer one of those queries).
 ///
 /// Outbound is told from the interface's own hardware address on Ethernet, and from the
@@ -85,11 +86,14 @@ struct CaptureFilter: Equatable, Sendable {
         a.loadByteIndexed(at: L + 12)  // data offset
         emitPayloadCheck(&a, accept: accept, drop: drop)
         a.mark(v4udp)
+        let v4query = a.label()
         a.loadXHeaderLength(at: L)
         a.loadHalfIndexed(at: L + 2)  // UDP destination port
-        a.jumpIfEqual(53, accept, else: nil)
+        a.jumpIfEqual(53, v4query, else: nil)
         a.loadHalfIndexed(at: L + 4)  // UDP length
         emitInitialCheck(&a, firstByte: { $0.loadByteIndexed(at: L + 8) }, accept: accept, drop: drop)
+        a.mark(v4query)
+        emitQueryCheck(&a, flags: { $0.loadByteIndexed(at: L + 8 + 2) }, questions: { $0.loadHalfIndexed(at: L + 8 + 4) }, accept: accept, drop: drop)
         a.mark(v4in)
         a.loadByte(at: L + 9)
         a.jumpIfEqual(17, nil, else: drop)
@@ -113,10 +117,13 @@ struct CaptureFilter: Equatable, Sendable {
         a.loadByte(at: L + 40 + 12)
         emitPayloadCheck(&a, accept: accept, drop: drop)
         a.mark(v6udp)
+        let v6query = a.label()
         a.loadHalf(at: L + 40 + 2)
-        a.jumpIfEqual(53, accept, else: nil)
+        a.jumpIfEqual(53, v6query, else: nil)
         a.loadHalf(at: L + 40 + 4)
         emitInitialCheck(&a, firstByte: { $0.loadByte(at: L + 40 + 8) }, accept: accept, drop: drop)
+        a.mark(v6query)
+        emitQueryCheck(&a, flags: { $0.loadByte(at: L + 40 + 8 + 2) }, questions: { $0.loadHalf(at: L + 40 + 8 + 4) }, accept: accept, drop: drop)
         a.mark(v6in)
         a.loadByte(at: L + 6)
         a.jumpIfEqual(17, nil, else: drop)
@@ -166,6 +173,17 @@ struct CaptureFilter: Equatable, Sendable {
         load(&a)
         a.and(0xc0)
         a.jumpIfEqual(0xc0, accept, else: drop)
+    }
+
+    /// Accepts a datagram that starts as a standard DNS query with one question, the test
+    /// `DNS.parseQuery` makes before it reads a name: `flags` loads the first byte of the
+    /// message's flags (the reply bit and the operation), `questions` its question count.
+    /// One too short to hold them loads nothing and is dropped.
+    private static func emitQueryCheck(_ a: inout Assembler, flags: (inout Assembler) -> Void, questions: (inout Assembler) -> Void, accept: Assembler.Label, drop: Assembler.Label) {
+        flags(&a)
+        a.jumpIfSet(0xf8, drop, else: nil)
+        questions(&a)
+        a.jumpIfEqual(1, accept, else: drop)
     }
 
     /// A holds the transport header's data-offset byte and M[0] the bytes from the
