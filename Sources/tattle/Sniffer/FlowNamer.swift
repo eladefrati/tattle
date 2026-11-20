@@ -224,37 +224,47 @@ struct FlowNamer: Sendable {
         switch p.proto {
         case .tcp:
             let syn = p.tcpFlags & 0x02 != 0 && p.tcpFlags & 0x10 == 0
+            var events: [FlowEvent] = []
             if syn {
-                return start(Flow(start: ts, lastSeen: ts, nextSeq: p.tcpSeq &+ 1, quicDone: true), for: key)
-                    + [FlowEvent(key: key, kind: .opened)]
+                events = start(Flow(start: ts, lastSeen: ts, nextSeq: p.tcpSeq &+ 1, quicDone: true), for: key)
+                events.append(FlowEvent(key: key, kind: .opened))
             }
-            guard var flow = flows[key] else { return [] }
+            guard var flow = flows[key] else { return events }
             flow.lastSeen = ts
             defer { flows[key] = flow }
-            guard !flow.finished, !p.payload.isEmpty else { return [] }
-            // Only the in-order segment extends the buffer: a retransmit (seq behind) is
-            // dropped, and a gap (seq ahead) ends buffering rather than risk a shifted parse.
-            // The stream advances by the segment's length on the wire, captured or not.
-            if p.tcpSeq == flow.nextSeq {
-                flow.nextSeq = flow.nextSeq &+ UInt32(p.payload.count + p.uncaptured)
-                switch inspectTCP(&flow, payload: p.payload) {
-                case .named(let name, let source):
-                    flow.named = true
-                    return [FlowEvent(key: key, kind: .named(name, source))]
-                case .unnamed(let reason):
-                    return flow.dnsNamed ? [] : [FlowEvent(key: key, kind: .unnamed(reason))]
-                case .pending:
-                    // The server name has not come, and the rest of this segment was cut by
-                    // the snap length: what holds the name was not captured, so say so now.
-                    guard p.uncaptured > 0, flow.tlsBuffer != nil else { return [] }
-                    flow.tlsBuffer = nil
-                    return flow.dnsNamed ? [] : [FlowEvent(key: key, kind: .unnamed(.gap))]
-                }
-            } else if p.tcpSeq &- flow.nextSeq < 0x8000_0000 {
+            guard !flow.finished, !p.payload.isEmpty else { return events }
+            // A SYN takes a sequence number of its own, and with TCP Fast Open carries the
+            // stream's first bytes after it.
+            let seq = syn ? p.tcpSeq &+ 1 : p.tcpSeq
+            // Only bytes that continue the stream extend the buffer. A segment that starts
+            // ahead of them is a gap, which ends buffering rather than risk a shifted parse.
+            // One that starts behind is a retransmit: its bytes already read are dropped, and
+            // any past them are taken, since data resent is not always cut where it was first
+            // (a server that refuses a SYN's data gets it again from the start). The stream
+            // advances by the segment's length on the wire, captured or not.
+            let behind = flow.nextSeq &- seq
+            guard behind < 0x8000_0000 else {
                 flow.tlsBuffer = nil
-                return flow.dnsNamed ? [] : [FlowEvent(key: key, kind: .unnamed(.gap))]
+                return flow.dnsNamed ? events : events + [FlowEvent(key: key, kind: .unnamed(.gap))]
             }
-            return []
+            let length = p.payload.count + p.uncaptured
+            guard Int(behind) < length else { return events }
+            flow.nextSeq = seq &+ UInt32(length)
+            let fresh = p.payload.dropFirst(Int(behind))
+            // New bytes none of which were captured say nothing yet; the cut is told below.
+            switch fresh.isEmpty ? .pending : inspectTCP(&flow, payload: fresh) {
+            case .named(let name, let source):
+                flow.named = true
+                return events + [FlowEvent(key: key, kind: .named(name, source))]
+            case .unnamed(let reason):
+                return flow.dnsNamed ? events : events + [FlowEvent(key: key, kind: .unnamed(reason))]
+            case .pending:
+                // The server name has not come, and the rest of this segment was cut by
+                // the snap length: what holds the name was not captured, so say so now.
+                guard p.uncaptured > 0, flow.tlsBuffer != nil else { return events }
+                flow.tlsBuffer = nil
+                return flow.dnsNamed ? events : events + [FlowEvent(key: key, kind: .unnamed(.gap))]
+            }
         case .udp:
             // A DNS query can look like anything; replies are read above.
             guard p.dstPort != 53 else { return [] }

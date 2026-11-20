@@ -107,6 +107,54 @@ final class FlowNamerTests: XCTestCase {
         XCTAssertEqual(q.observe(udp(SnifferParserTests.sealInitial(frame)), at: t0).last?.kind, .named("example.com", .quic))
     }
 
+    /// TCP Fast Open: the SYN carries the first bytes of the stream, and what follows is
+    /// numbered after them.
+    func testAHelloInTheSYNNamesTheFlow() {
+        let record = clientHelloRecord
+        let opened = FlowEvent(key: tcpKey, kind: .opened)
+        let named = FlowEvent(key: tcpKey, kind: .named("example.com", .sni))
+
+        var whole = namer()
+        XCTAssertEqual(whole.observe(tcp(flags: 0x02, seq: 1000, record), at: t0), [opened, named], "opened first, then named")
+        XCTAssertEqual(whole.observe(tcp(flags: 0x18, seq: 1001 + UInt32(record.count), [0x17, 3, 3, 0, 1, 0]), at: t0 + 0.1), [], "what follows is no gap")
+
+        var split = namer()
+        XCTAssertEqual(split.observe(tcp(flags: 0x02, seq: 1000, Array(record.prefix(40))), at: t0), [opened])
+        XCTAssertEqual(split.observe(tcp(flags: 0x18, seq: 1041, Array(record.dropFirst(40))), at: t0 + 0.1), [named], "the rest continues the SYN's bytes")
+
+        // A server that did not take the SYN's data gets it again after the handshake.
+        var resent = namer()
+        XCTAssertEqual(resent.observe(tcp(flags: 0x02, seq: 1000, Array(record.prefix(40))), at: t0), [opened])
+        XCTAssertEqual(resent.observe(tcp(flags: 0x18, seq: 1001, Array(record.prefix(30))), at: t0 + 0.1), [], "bytes already held are not taken twice")
+        XCTAssertEqual(resent.observe(tcp(flags: 0x18, seq: 1001, record), at: t0 + 0.2), [named], "only the bytes past them are new")
+        XCTAssertEqual(resent.observe(tcp(flags: 0x18, seq: 1001 + UInt32(record.count), [0x17, 3, 3, 0, 1, 0]), at: t0 + 0.3), [], "and the stream goes on from their end")
+
+        // Bytes resent that reach past what was captured of them are new bytes cut off.
+        var overlap = namer()
+        _ = overlap.observe(tcp(flags: 0x02, seq: 1000), at: t0)
+        _ = overlap.observe(tcp(flags: 0x18, seq: 1001, Array(record.prefix(40))), at: t0)
+        var longer = tcp(flags: 0x18, seq: 1001, Array(record.prefix(40)))
+        longer.uncaptured = record.count - 40
+        XCTAssertEqual(overlap.observe(longer, at: t0 + 0.1), [FlowEvent(key: tcpKey, kind: .unnamed(.gap))])
+
+        // A SYN sent again without its data starts over, and the data comes after it.
+        var again = namer()
+        XCTAssertEqual(again.observe(tcp(flags: 0x02, seq: 1000, Array(record.prefix(40))), at: t0), [opened])
+        XCTAssertEqual(again.observe(tcp(flags: 0x02, seq: 1000), at: t0 + 1), [opened])
+        XCTAssertEqual(again.observe(tcp(flags: 0x18, seq: 1001, record), at: t0 + 1.1), [named])
+
+        // A SYN cut by the snap length before the name says so, as any segment does.
+        var cut = namer()
+        var syn = tcp(flags: 0x02, seq: 1000, Array(record.prefix(40)))
+        syn.uncaptured = record.count - 40
+        XCTAssertEqual(cut.observe(syn, at: t0), [opened, FlowEvent(key: tcpKey, kind: .unnamed(.gap))])
+
+        var http = namer()
+        let key = FlowKey(proto: .tcp, localPort: 50000, remote: peer, remotePort: 80)
+        XCTAssertEqual(http.observe(tcp(port: 80, flags: 0x02, seq: 1, Array("GET / HTTP/1.1\r\nHost: example.org\r\n\r\n".utf8)), at: t0),
+                       [FlowEvent(key: key, kind: .opened), FlowEvent(key: key, kind: .named("example.org", .http))])
+    }
+
     func testNotAHandshakeAndTimeoutAreReported() {
         var n = namer()
         _ = n.observe(tcp(port: 22, flags: 0x02, seq: 1), at: t0)
