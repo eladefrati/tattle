@@ -294,6 +294,21 @@ Preconditions:
   to a broadcast or multicast one, on the one link the Mac was on. A forged frame cannot be
   sent to the Mac on demand: that such a frame is not read rests on
   `testAFrameUnderThisMacsHardwareAddressToItselfOrAGroupAddressIsNotReadAsSent`.
+- The gateway's hardware address, read so that a network whose gateway answers at a group
+  address keeps its names: proven 2026-11-20 on the development Mac with the broker, dev copy
+  at the commit titled `fix(sniffer): read frames to a group address as sent where the
+  gateway answers at one` plus one temporary line timing the lookup, run
+  `2026-11-20T005047`. At each of 51 checks of the interface, five seconds apart, the lookup
+  found the address `arp -n` prints for the router, in 0.13 to 1.23 ms, median 0.32 ms. Names
+  were still read: `github.com, from DNS` after a lookup through the system's resolver, `connect named` its
+  `example.com | http`, and of this Mac's own connections to the internet opened after the
+  run's first seconds 44 of 52 over TCP and all 28 over UDP were named from the wire. The
+  other 8 were mDNSResponder's to public resolvers' ports 443 and 853, which the sniffer
+  gave no outcome on 2026-11-12 either. This Mac's gateway answers at a host's address, so
+  the group test stayed on; a gateway at a group address cannot be had on demand and rests on
+  `testWhereTheGatewayAnswersAtAGroupAddressFramesToOneOpenFlows`. Neither Mac had an IPv6
+  default route: that the store names an IPv6 router as it does an IPv4 one rests on no run, and
+  the IPv6 lookup was checked by hand against a link-local entry `ndp -an` prints.
 - DNS replies bounded, proven 2026-11-10 on the development Mac with the broker, dev copy at
   `c8d4028`, run `2026-11-10T163829`: `nc` to example.com shows `Name from the HTTP request`,
   and with no traffic made for it an `ssh` to `140.82.113.3:22` was logged `notHandshake` and
