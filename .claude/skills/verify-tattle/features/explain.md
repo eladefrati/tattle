@@ -350,8 +350,8 @@ Preconditions:
   Run `2026-11-20T002532`, a titled process: the row and the detail kept the title, the
   prompt's key and `Process` read `postgres`, and the stored pattern was `postgres`; then
   `Confirm`, `Forget…`, `Cancel` (the row still stored), `Forget…`, `Forget answer` (`No
-  explanation yet.`, no row) and `Explain` again (a new unconfirmed row, with `Ask again`,
-  `Confirm` and `Forget…` in that order). In the same run, a startup item's program, watched
+  explanation yet.`, no row) and `Explain` again (a new unconfirmed row; that build still
+  had `Forget…` after `Ask again` and `Confirm`). In the same run, a startup item's program, watched
   path and plist, an email address in a label and a 600-letter label. Run
   `2026-11-20T002406`, a first contact: its row read `No name seen`, then `Model answer,
   confirmed by you` after `Confirm` and `Back`, then `No name seen` again after `Forget
@@ -364,6 +364,18 @@ Preconditions:
   listener's key, another account's folder, a disk's, the hourly deletion of expired answers
   and an answer that was not kept standing in for the unconfirmed one asked again rest on
   unit tests; for the last, no row there carries a name under a search domain.
+- The answer's row with `Forget…` at the left, and a press straight after its buttons
+  change, proven 2026-11-20 on the test Mac, dev copy at the commit titled `perf(explain):
+  write a value out once when replacing its private IPv4 addresses, not once for each`,
+  both runs copied to `build/verify/runs/test-mac-2026-11-20/`, on a startup item. Run
+  `2026-11-20T014140`:
+  with no pause before it, `Confirm` pressed as soon as the answer showed, `Forget answer`
+  after `Forget…` (on the unconfirmed answer and on the confirmed one) and `Explain` after
+  `Forget answer` each left the stored answer and the prompts sent as they were. After a
+  second's pause `Cancel`, `Confirm` and `Forget answer` acted. The run holds a screenshot
+  of the row's four states: unconfirmed, confirmed, and each with `Forget…` pressed once.
+  Run `2026-11-20T014841`: the press on `Confirm`, 0.4 s after the one on `Explain`,
+  reported `pressed` and confirmed nothing; after a second's pause it confirmed.
 - A host name only the network resolves (`.local`, a search domain, no dot) going out as
   `<private-host>` and keeping no answer rests on unit tests
   (`testAHostNameOnlyThisNetworkResolvesIsReplaced`,

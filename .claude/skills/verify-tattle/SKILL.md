@@ -183,6 +183,9 @@ build/Tattle.app` starts it again.
   ([panel](features/panel.md)). Say so before a long drive if they are at the Mac. Reopen with
   `$V ax open` and check where it is with `$V ax text`.
 - The panel keeps its navigation while closed; `$V tab` backs out first.
+- In every detail, the answer's row (`Explain`, `Ask again`, `Confirm`, `Forget…`) ignores a
+  press sent straight after its buttons change: pause a second first
+  ([explain](features/explain.md), Gotchas).
 - The sniffer skips local-network destinations (`Sources/tattle/Sniffer/FlowNamer.swift`),
   so a connection to the router or another LAN device never gets a name or a reason.
 - A connection is filed under its responsible app: `nc` started by `connect` is filed under
