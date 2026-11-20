@@ -14,8 +14,9 @@ import Foundation
 /// Outbound is told from the interface's own hardware address on Ethernet, and from the
 /// interface's addresses on links without one. A frame from that hardware address which is
 /// addressed to it, or to a broadcast or multicast address, is dropped: this Mac sends
-/// nothing so addressed that the parsers read, and another host can (ADR-0006). Fragments other than the first are dropped;
-/// IPv6 extension headers are not followed (a host's own TCP and UDP rarely have any).
+/// nothing so addressed that the parsers read, and another host can (ADR-0006). Fragments
+/// other than the first are dropped; IPv6 extension headers are not followed (a host's own
+/// TCP and UDP rarely have any).
 struct CaptureFilter: Equatable, Sendable {
     struct Instruction: Equatable, Sendable {
         var code: UInt16
