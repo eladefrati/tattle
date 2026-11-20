@@ -147,6 +147,10 @@ Preconditions:
     changes`, and `Plist` `<home>/Library/LaunchAgents/<label>.plist`, macOS's own folders kept;
   - a plist watching `~/Volumes/<a name>` and `~/Users/<a name>`: `When` reads `when
     <home>/Volumes/<volume>, <home>/Users/<other-user> change`;
+  - a plist watching `~/<a folder>//Volumes/<a name>` (a repeated slash), `~/Volumes/./<a
+    name>/` and `~/<a folder>/api/users/server`: the panel shows each as it is written, and
+    `When` reads `when <home>/<folders>/Volumes/<volume>, <home>/Volumes/<volume>,
+    <home>/<folders>/server change`;
   - a plist with 16,000 `WatchPaths` under the home: `Explain` is answered within seconds,
     and the prompt's `When` is the first 500 characters of the cut paths and ` <cut>`;
   - a plist labelled `proof for name@example.com`: the key reads `proof for <email>`; one
@@ -376,6 +380,18 @@ Preconditions:
   of the row's four states: unconfirmed, confirmed, and each with `Forget…` pressed once.
   Run `2026-11-20T014841`: the press on `Confirm`, 0.4 s after the one on `Explain`,
   reported `pressed` and confirmed nothing; after a second's pause it confirmed.
+- A watched path with a repeated slash, and the row's presses timed by the Mac's uptime,
+  proven 2026-11-20 on the test Mac, dev copy at the commit titled `fix(explain): drop a
+  path's "." parts, and ask the text passes whether a name stands inside a Users or Volumes
+  folder, in the path as written and as the file system reads it`, run `2026-11-20T033016`,
+  copied to `build/verify/runs/test-mac-2026-11-20/`. A startup item watching `~/mnt//Volumes/<a
+  name>`, `~/dev//Users/<a name>`, `~/Volumes/./<a name>/` and `~/dev/api/users/server` read
+  `when <home>/<folders>/Volumes/<volume>, <home>/<folders>/Users/<other-user>,
+  <home>/Volumes/<volume>, <home>/<folders>/server change`. With no pause before it,
+  `Confirm` as the answer showed, `Forget answer` 0.2 s after `Forget…` and `Explain` 0.2 s
+  after `No explanation yet.` showed each left the stored answer and the prompts sent as
+  they were; after a second's pause `Confirm` and `Forget answer` acted. A press timed before the change
+  rests on the unit test (`testAPressStraightAfterTheRowsButtonsChangeDoesNotCount`).
 - A host name only the network resolves (`.local`, a search domain, no dot) going out as
   `<private-host>` and keeping no answer rests on unit tests
   (`testAHostNameOnlyThisNetworkResolvesIsReplaced`,
