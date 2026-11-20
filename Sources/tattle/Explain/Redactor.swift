@@ -3,8 +3,8 @@ import SystemConfiguration
 
 /// Replaces what would identify this Mac or its user before a prompt leaves the machine:
 /// the home path, the username, private and local IP addresses, the machine's names,
-/// Tailscale names, which identify the account, other accounts' folders, disk names and
-/// email addresses.
+/// Tailscale names, which identify the account, other accounts' folders, disk names,
+/// email addresses and host names only this network resolves.
 struct Redactor: Sendable {
     /// What a text is. An item's key and facts share one, so the same rules apply to both.
     enum Context {
@@ -29,6 +29,8 @@ struct Redactor: Sendable {
     var machineNames: [String]
     /// The mounted disks' names, which can hold spaces and brackets.
     var volumeNames: [String] = []
+    /// The network's search domains: a host under one is a name this network gave.
+    var searchDomains: [String] = []
 
     /// The machine's names come from the dynamic store and the kernel, never from a name
     /// lookup: macOS holds an app's reverse lookups of its own addresses, loopback included,
@@ -37,14 +39,16 @@ struct Redactor: Sendable {
     static var current: Redactor {
         var buffer = [CChar](repeating: 0, count: Int(MAXHOSTNAMELEN) + 1)
         let hostName = gethostname(&buffer, buffer.count) == 0 ? String(cString: buffer) : nil
+        let domains = SystemDNS.current.domains
         return Redactor(
             home: NSHomeDirectory(),
             username: NSUserName(),
             machineNames: machineNames(
                 computerName: SCDynamicStoreCopyComputerName(nil, nil) as String?,
                 localHostName: SCDynamicStoreCopyLocalHostName(nil) as String?,
-                hostName: hostName, domains: SystemDNS.current.domains),
-            volumeNames: (try? FileManager.default.contentsOfDirectory(atPath: "/Volumes")) ?? [])
+                hostName: hostName, domains: domains),
+            volumeNames: (try? FileManager.default.contentsOfDirectory(atPath: "/Volumes")) ?? [],
+            searchDomains: domains)
     }
 
     /// The computer name, the Bonjour name bare and with .local, the hostname, and each host
@@ -110,9 +114,12 @@ struct Redactor: Sendable {
     }
 
     /// An item's key as a prompt carries it. A startup item with no label is known by its
-    /// plist's path, which is cut as a path.
+    /// plist's path, which is cut as a path. A host with no dot is a name only this network
+    /// resolves; only the key is read so, since in a fact's text the same letters are a word.
     func redact(key: String, of kind: Rule.Kind) -> String {
-        redact(key, paths: kind == .launchItem && key.hasPrefix("/") ? [key] : [], as: Context(kind))
+        let sent = redact(key, paths: kind == .launchItem && key.hasPrefix("/") ? [key] : [], as: Context(kind))
+        let isBareName = !key.isEmpty && !key.contains(".") && !key.contains(":")
+        return kind == .host && isBareName && sent == key ? "<private-host>" : sent
     }
 
     /// `text` with each of `paths`, which it holds whole, cut, then redacted as any text.
@@ -210,6 +217,7 @@ struct Redactor: Sendable {
                 of: Self.wholeHost("[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*\\.ts\\.net"),
                 with: "<tailnet-device>", options: [.regularExpression, .caseInsensitive])
         }
+        if context == .host { out = redactPrivateHosts(out) }
         out = redactUsername(out, in: context)
         return Self.redactAddresses(out, spelledWithHyphens: captured)
     }
@@ -239,6 +247,28 @@ struct Redactor: Sendable {
             let escaped = NSRegularExpression.escapedPattern(for: name)
                 .replacingOccurrences(of: "['’]", with: "['’]", options: .regularExpression)
             out = out.replacingOccurrences(of: bounded(escaped), with: "<machine>", options: [.regularExpression, .caseInsensitive])
+        }
+        return out
+    }
+
+    /// Endings no public name has: Bonjour's, the ones routers and private networks give, and
+    /// the ones reserved for them.
+    private static let privateEndings = ["local", "lan", "internal", "home.arpa", "home", "corp", "localdomain"]
+
+    /// A host's name only this network resolves says what is on it ("payroll-db.corp.example.com",
+    /// "users-nas.local"), and it can stand at a public address. Under a private ending the
+    /// ending stays: it says what kind of network the name is from, and is the same on every
+    /// one. A search domain names the network, so a name under one goes whole; the domain alone
+    /// is not a host on it.
+    private func redactPrivateHosts(_ text: String) -> String {
+        let labels = "(?:[a-z0-9_-]+\\.)+"
+        let endings = Self.privateEndings.map(NSRegularExpression.escapedPattern).joined(separator: "|")
+        var out = text.replacingOccurrences(
+            of: Self.wholeHost(labels + "(" + endings + ")"), with: "<private-host>.$1", options: [.regularExpression, .caseInsensitive])
+        for domain in searchDomains.sorted(by: { $0.count > $1.count }) where !domain.isEmpty {
+            out = out.replacingOccurrences(
+                of: Self.wholeHost(labels + NSRegularExpression.escapedPattern(for: domain)),
+                with: "<private-host>", options: [.regularExpression, .caseInsensitive])
         }
         return out
     }

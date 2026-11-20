@@ -77,7 +77,8 @@ process, so Tattle shows every host it contacted but not which tab caused it.
    Unconfirmed answers expire after 45 days. Two kinds of answer are shown without being
    stored, and have no **Confirm**: one about code Tattle cannot tell from other code of
    the same name (unnamed code, or a file it cannot read), and one about a host that went
-   out as a placeholder, since a private address is another device on another network.
+   out as a placeholder, since a private address or name is another device on another
+   network.
 
 ## Install
 
@@ -234,7 +235,10 @@ folders: `~/Library/CloudStorage/<a cloud drive>/Client/bin/sync` goes out as
 `<home>/Library/CloudStorage/<folders>/sync`. Of the folders, only macOS's own at the start
 are kept (`Documents`, `Downloads`, `Library/Application Support` and the like). A path
 anywhere else, such as `/Applications` or `/opt`, is where software is installed and is
-sent whole.
+sent whole. A host name that only your network resolves is sent as a placeholder, even at
+a public address: a name under `.local`, `.lan`, `.internal`, `.home.arpa`, `.home`, `.corp`
+or `.localdomain` goes out as `<private-host>` with that ending, and a name under one of
+your network's search domains, or with no dot at all, as `<private-host>` alone.
 
 <details>
 <summary>Where a name stays in</summary>
@@ -253,8 +257,9 @@ A name is replaced only where Tattle can tell it from an ordinary word, so some 
 - A username of one or two letters is replaced only before an `@`, straight after the program
   in a process title, and as the author's part. In edited instructions it stays.
 - The Mac's names are replaced in a host only when the whole host is one of them, so
-  `dev.azure.com` stays on a Mac called `dev`, and `dev.lan` stays unless `lan` is a search
-  domain. In a startup item they are replaced only as the author's part, and in a process or
+  `dev.azure.com` stays on a Mac called `dev`, and `dev.lan` reads as a private host, not
+  as the Mac, unless `lan` is a search domain. A search domain itself (`corp.example.com`)
+  stays; only names under it go. In a startup item they are replaced only as the author's part, and in a process or
   a port they stay. Straight and curly apostrophes count as one; other spellings do not match.
 - An email address is one whose domain ends in letters and does not start with a number, so
   `python@3.12` and `user@ttys003` stay, and so does an address at a bare name

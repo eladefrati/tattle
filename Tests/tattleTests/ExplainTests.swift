@@ -210,6 +210,61 @@ final class RedactorTests: XCTestCase {
         XCTAssertEqual(redactor.redact("Mail from name@example.com is mine.", as: .instructions), "Mail from name@example.com is mine.")
     }
 
+    /// A name only this network resolves says what is on it, though its address is public: one
+    /// under an ending no public name has, or under a search domain. The ending says what kind
+    /// of network it is and no more, so it stays; a search domain names the network.
+    func testAHostNameOnlyThisNetworkResolvesIsReplaced() {
+        let net = Redactor(home: "/Users/username", username: "username", machineNames: ["users-computer"],
+                           searchDomains: ["corp.example.com", "office", "lan"])
+        let rows: [(String, String)] = [
+            ("users-nas.local", "<private-host>.local"),
+            ("printer.floor2.lan", "<private-host>.lan"),
+            ("ip-10-0-1-5.ec2.internal", "<private-host>.internal"),
+            ("router.home.arpa", "<private-host>.home.arpa"),
+            ("nas.home", "<private-host>.home"),
+            ("payroll-db.corp", "<private-host>.corp"),
+            ("box.localdomain", "<private-host>.localdomain"),
+            ("_airplay._tcp.local", "<private-host>.local"),
+            ("payroll-db.corp.example.com", "<private-host>"),
+            ("a.b.corp.example.com", "<private-host>"),
+            ("nas.office", "<private-host>"),
+            ("name from users-nas.local, in a DNS reply.", "name from <private-host>.local, in a DNS reply."),
+            ("users-computer", "<machine>"),
+            ("users-computer.lan", "<private-host>.lan"),
+            // The domain itself, and public names that only look alike.
+            ("corp.example.com", "corp.example.com"),
+            ("notcorp.example.com", "notcorp.example.com"),
+            ("local.example.com", "local.example.com"),
+            ("users-nas.local.example.com", "users-nas.local.example.com"),
+            ("example.locale", "example.locale"),
+            ("my-lan.example", "my-lan.example"),
+            ("www.example.com", "www.example.com"),
+            ("local", "local"),
+        ]
+        for (input, expected) in rows {
+            XCTAssertEqual(net.redact(input, as: .host), expected, input)
+        }
+        XCTAssertEqual(net.redact("com.acme.local and db.corp.example.com", as: .program), "com.acme.local and db.corp.example.com", "a program's dotted name is no host")
+        XCTAssertEqual(net.redact("homebrew.mxcl.local", as: .launchItem), "homebrew.mxcl.local")
+        XCTAssertEqual(net.redact("My NAS is users-nas.local", as: .instructions), "My NAS is users-nas.local")
+    }
+
+    /// A host's key with no dot is a name only this network resolves. In a fact's text the
+    /// same letters are a word ("TCP").
+    func testAHostKeyWithNoDotIsReplaced() {
+        let net = Redactor(home: "/Users/username", username: "username", machineNames: ["users-computer"])
+        XCTAssertEqual(net.redact(key: "intranet", of: .host), "<private-host>")
+        XCTAssertEqual(net.redact(key: "payroll_db", of: .host), "<private-host>")
+        XCTAssertEqual(net.redact(key: "users-computer", of: .host), "<machine>")
+        XCTAssertEqual(net.redact(key: "username", of: .host), "<user>")
+        XCTAssertEqual(net.redact(key: "example.com", of: .host), "example.com")
+        XCTAssertEqual(net.redact(key: "17.253.144.10", of: .host), "17.253.144.10")
+        XCTAssertEqual(net.redact(key: "2a03:2880:f12f::1", of: .host), "2a03:2880:f12f::1", "an address is not a name")
+        XCTAssertEqual(net.redact(key: "192.168.1.5", of: .host), "<private-ip>")
+        XCTAssertEqual(net.redact(key: "intranet", of: .process), "intranet", "a program's name")
+        XCTAssertEqual(net.redact("TCP", as: .host), "TCP")
+    }
+
     func testMachineNames() {
         XCTAssertEqual(redactor.redact("host USERS-COMPUTER.local and Users-Computer", as: .host), "host <machine> and <machine>")
     }
@@ -218,7 +273,8 @@ final class RedactorTests: XCTestCase {
         let dev = Redactor(home: "/Users/username", username: "username", machineNames: ["dev.local", "dev"])
         XCTAssertEqual(dev.redact("Apple Development (ABCDE12345)", as: .host), "Apple Development (ABCDE12345)")
         XCTAssertEqual(dev.redact("my-dev-box devices dev2 webdev my-dev", as: .host), "my-dev-box devices dev2 webdev my-dev")
-        XCTAssertEqual(dev.redact("dev, DEV.local and dev.lan", as: .host), "<machine>, <machine> and dev.lan")
+        XCTAssertEqual(dev.redact("dev, DEV.local and dev.example", as: .host), "<machine>, <machine> and dev.example")
+        XCTAssertEqual(dev.redact("dev.lan", as: .host), "<private-host>.lan", "not this Mac, but a name only its network resolves")
     }
 
     /// A host is this Mac's only when all of it is one of the Mac's names: the name's first
@@ -227,7 +283,7 @@ final class RedactorTests: XCTestCase {
         let dev = Redactor(home: "/Users/username", username: "username", machineNames: ["dev", "dev.local", "dev.lan"])
         XCTAssertEqual(dev.redact("dev.azure.com, dev.example.com, dev.local.example, pages.dev", as: .host), "dev.azure.com, dev.example.com, dev.local.example, pages.dev")
         XCTAssertEqual(dev.redact("dev, dev.local, dev.lan. Then", as: .host), "<machine>, <machine>, <machine>. Then")
-        XCTAssertEqual(dev.redact("dev_db, my_dev, _dev._tcp.local, dev_db.example.com", as: .host), "dev_db, my_dev, _dev._tcp.local, dev_db.example.com")
+        XCTAssertEqual(dev.redact("dev_db, my_dev, _dev._tcp.example, dev_db.example.com", as: .host), "dev_db, my_dev, _dev._tcp.example, dev_db.example.com")
     }
 
     /// A process's name is its author's: a Mac's name in it is a coincidence.
@@ -259,7 +315,7 @@ final class RedactorTests: XCTestCase {
     /// A run of numbers in the user's own words is not an address spelled with hyphens.
     func testEditedInstructionsKeepNumbersWithHyphens() {
         XCTAssertEqual(redactor.redact("steps 10-20-30-40 on 10.0.0.5", as: .instructions), "steps 10-20-30-40 on <private-ip>")
-        XCTAssertEqual(redactor.redact("ip-10-0-1-5.ec2.internal", as: .host), "ip-<private-ip>.ec2.internal", "captured text still loses one")
+        XCTAssertEqual(redactor.redact("ip-10-0-1-5.ec2.example", as: .host), "ip-<private-ip>.ec2.example", "captured text still loses one")
     }
 
     /// macOS stores a curly apostrophe in the computer name; other text often has a straight one.
@@ -276,8 +332,8 @@ final class RedactorTests: XCTestCase {
             hostName: "desktop.corp.example.com", domains: ["tail1234.ts.net", "localdomain"])
         let username = Redactor(home: "/Users/username", username: "username", machineNames: names)
         XCTAssertEqual(
-            username.redact("User’s Computer, Users-Computer.local, users-computer.tail1234.ts.net, users-computer.lan", as: .host),
-            "<machine>, <machine>, <machine>, users-computer.lan")
+            username.redact("User’s Computer, Users-Computer.local, users-computer.tail1234.ts.net, users-computer.example", as: .host),
+            "<machine>, <machine>, <machine>, users-computer.example")
         XCTAssertEqual(username.redact("desktop.corp.example.com, desktop.localdomain", as: .host), "<machine>, <machine>")
         let none = Redactor.machineNames(computerName: nil, localHostName: nil, hostName: "localhost", domains: ["localdomain"])
         XCTAssertEqual(none, [])
@@ -347,8 +403,8 @@ final class RedactorTests: XCTestCase {
 
     /// Cloud and wildcard-DNS host names spell an address with hyphens.
     func testHyphenEncodedPrivateAddresses() {
-        XCTAssertEqual(redactor.redact("ip-10-0-1-5.ec2.internal 192-168-1-9.nip.io 100-64-0-1", as: .host),
-                       "ip-<private-ip>.ec2.internal <private-ip>.nip.io <private-ip>")
+        XCTAssertEqual(redactor.redact("ip-10-0-1-5.ec2.example 192-168-1-9.nip.io 100-64-0-1", as: .host),
+                       "ip-<private-ip>.ec2.example <private-ip>.nip.io <private-ip>")
         XCTAssertEqual(redactor.redact("8-8-8-8.nip.io 3-10-0-0-5 10-0-0-5-7 2026-10-17-1", as: .host),
                        "8-8-8-8.nip.io 3-10-0-0-5 10-0-0-5-7 2026-10-17-1")
     }
@@ -473,7 +529,7 @@ final class RedactionReviewTableTests: XCTestCase {
             (homeMac, .instructions, "/Users/username/x", "<<machine>>/x"),
             (user("username", mac: ["Home"]), .instructions, "/Users/username/Library/x", "<<machine>>/Library/x"),
             (user("machine", mac: ["x"]), .instructions, "/Users/machine/bin/x", "<home>/bin/<<user>>"),
-            (user("machine", mac: ["computer"]), .host, "computer.lan", "computer.lan"),
+            (user("machine", mac: ["computer"]), .host, "computer.lan", "<private-host>.lan"),
 
             // Second review: a disk's name and the login.
             (user("username", disks: ["username work files"]), .launchItem, "/Volumes/username work files/bin/tool", "/Volumes/<volume>/bin/tool"),
@@ -528,14 +584,14 @@ final class RedactionReviewTableTests: XCTestCase {
             // Second review: a host's edges.
             (dev, .host, "dev_db", "dev_db"),
             (dev, .host, "my_dev", "my_dev"),
-            (dev, .host, "_dev._tcp.local", "_dev._tcp.local"),
+            (dev, .host, "_dev._tcp.local", "<private-host>.local"),
             (dev, .host, "dev_db.example.com", "dev_db.example.com"),
             (dev, .host, "dev_api.example.com", "dev_api.example.com"),
             (dev, .host, "devé", "devé"),
             (dev, .host, "édev", "édev"),
             (user("dev"), .host, "dev_db", "dev_db"),
             (user("dev"), .host, "my_dev", "my_dev"),
-            (user("dev"), .host, "_dev._tcp.local", "_dev._tcp.local"),
+            (user("dev"), .host, "_dev._tcp.local", "<private-host>.local"),
             (user("dev"), .host, "dev_db.example.com", "dev_db.example.com"),
             (mail, .host, "mail-attachment.example", "mail-attachment.example"),
             (mail, .host, "mail.google.com", "mail.google.com"),
@@ -691,7 +747,8 @@ final class PromptTests: XCTestCase {
         XCTAssertEqual(try key(.port, "postgres: username dev 192.168.1.9(5000) idle:tcp/5432"), "postgres: <user> dev <private-ip>(5000) idle:tcp/5432")
         XCTAssertEqual(try key(.process, "username.helper"), "username.helper", "the dotted-name rule holds in keys")
         XCTAssertEqual(try key(.host, "username-dev.example"), "username-dev.example")
-        XCTAssertEqual(try key(.host, "dev.lan"), "dev.lan")
+        XCTAssertEqual(try key(.host, "dev.lan"), "<private-host>.lan", "not the Mac, but a name only its network resolves")
+        XCTAssertEqual(try key(.host, "dev.example.com"), "dev.example.com")
         XCTAssertEqual(try key(.host, "dev"), "<machine>")
         XCTAssertEqual(try key(.launchItem, "username-backup"), "<user>-backup")
         XCTAssertEqual(try key(.launchItem, "dev-backup"), "dev-backup", "in a startup item a machine name matches only as the author's part")
@@ -1232,6 +1289,30 @@ final class ExplainerTests: XCTestCase {
             XCTAssertTrue(sent.contains(#""item":{"key":"<private-ip>","kind":"host"}"#), sent)
             XCTAssertFalse(sent.contains("192.168.1.37") || sent.contains("fd12:3456::1"), sent)
         }
+    }
+
+    /// A name only this network resolves can stand at a public address. The model is not shown
+    /// it, so nothing could tell a later host by that key from this one: the answer is not kept.
+    func testAPrivateLookingHostAtAPublicAddressDoesNotGoOutAndItsAnswerIsNotKept() async throws {
+        let provider = FakeProvider(output: #"{"purpose":"x","risk":"low","confidence":"low"}"#)
+        let explainer = Explainer(store: store, settings: settings, makeRedactor: {
+            Redactor(home: "/Users/username", username: "username", machineNames: [], searchDomains: ["corp.example.com"])
+        }, makeProvider: { _ in provider })
+        let sent = ["users-nas.local": "<private-host>.local", "payroll-db.corp.example.com": "<private-host>", "intranet": "<private-host>"]
+        for (host, placeholder) in sent {
+            let rule = try await explainer.ask(ExplainRequest(kind: .host, key: host, facts: [
+                Fact(name: "Address", value: "203.0.113.7:443"), Fact(name: "Cover name", value: host),
+            ]))
+            XCTAssertNil(rule.id, host)
+            let found = try await explainer.lookup(ExplainRequest(kind: .host, key: host))
+            XCTAssertNil(found, host)
+            let prompt = try XCTUnwrap(provider.seen.prompts.last)
+            XCTAssertTrue(prompt.contains(#""item":{"key":"\#(placeholder)","kind":"host"}"#), prompt)
+            XCTAssertTrue(prompt.contains("203.0.113.7:443"), "the public address still goes")
+            if host.contains(".") { XCTAssertFalse(prompt.contains(host), prompt) }
+        }
+        let kept = try await explainer.ask(ExplainRequest(kind: .host, key: "www.example.com"))
+        XCTAssertNotNil(kept.id, "a public name goes out as it is, and its answer is kept")
     }
 
     func testEachAskRedactsTheNamesOfThatMoment() async throws {

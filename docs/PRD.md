@@ -188,7 +188,8 @@ Resolution order for any item:
    "unconfirmed" until the user has read it, judged it against the facts panel, and
    confirmed it. An answer is shown without being stored when nothing would tell a later
    item by its key from this one: code with no identity or whose file cannot be read, and
-   a host whose key went out as a placeholder. There is no automatic check; confirmation is the user's. The source stays
+   a host whose key went out as a placeholder (a private address, or a name only the user's
+   network resolves). There is no automatic check; confirmation is the user's. The source stays
    `llm` so provenance is never lost. The schema lets the model propose a pattern, and
    nothing uses it: a kept answer is read only for the exact item (ADR-0005). Unconfirmed
    LLM rules expire after 45 days.
@@ -222,7 +223,9 @@ username, private and local IP addresses, the Mac's names, Tailscale device name
 accounts' folders, disk names, email addresses, and a public address a port is bound to are
 replaced with placeholders. A path held whole (a program's, a plist's, a watched file's) that lies under
 a home folder or on another disk goes out as its root, macOS's own folders at its start and
-its last part; any other path goes out whole. A name is replaced only where it can be told
+its last part; any other path goes out whole. A host name only the user's network resolves
+(under a private ending such as `.local`, under a search domain, or with no dot) goes out
+as a placeholder, whatever its address. A name is replaced only where it can be told
 from an ordinary word, so some stay; the README lists which. The default instructions go out as written. Edited
 instructions lose the home path in any case, the username, the Mac's names with either
 apostrophe, and private or local addresses unless spelled with hyphens; a dotted name such

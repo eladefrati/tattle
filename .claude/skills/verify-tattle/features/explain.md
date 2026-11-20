@@ -305,6 +305,12 @@ Preconditions:
   development Mac, the only one with either, run `2026-11-08T185833`. A host's whole-name rule, a
   tailnet name, an address spelled with hyphens and a public bound address rest on unit tests:
   `connect` reaches only its approved hosts, and neither Mac holds a public address.
+- A host name only the network resolves (`.local`, a search domain, no dot) going out as
+  `<private-host>` and keeping no answer rests on unit tests
+  (`testAHostNameOnlyThisNetworkResolvesIsReplaced`,
+  `testAPrivateLookingHostAtAPublicAddressDoesNotGoOutAndItsAnswerIsNotKept`): the sniffer
+  names no local-network destination, and `connect` reaches only its approved hosts, so no
+  row in the app carries such a name.
 - Rows another process wrote proven 2026-11-15 on the test Mac, for processes and ports:
   planted `builtin`, `user`, pattern and unreadable rows answered for nothing, only an exact
   `llm` row answered, the shipped rules showed after the rule table was dropped, `Explain` and
