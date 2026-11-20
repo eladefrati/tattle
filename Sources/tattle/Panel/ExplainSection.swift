@@ -58,11 +58,6 @@ struct ExplainSection: View {
                             Button("Forget answer") { forget(rule) }
                                 .buttonStyle(PanelButtonStyle(kind: .danger, height: 22))
                         } else {
-                            if isKept {
-                                Button("Forget\u{2026}") { forgetting = true }
-                                    .buttonStyle(PanelButtonStyle(height: 22))
-                                    .disabled(busy)
-                            }
                             if rule.source == .llm && rule.confirmed == nil {
                                 Button("Ask again") { ask() }
                                     .buttonStyle(PanelButtonStyle(height: 22))
@@ -71,6 +66,11 @@ struct ExplainSection: View {
                             if rule.source == .llm && rule.confirmed == nil && rule.id != nil {
                                 Button("Confirm") { confirm(rule) }
                                     .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
+                            }
+                            if isKept {
+                                Button("Forget\u{2026}") { forgetting = true }
+                                    .buttonStyle(PanelButtonStyle(height: 22))
+                                    .disabled(busy)
                             }
                         }
                     } else {
