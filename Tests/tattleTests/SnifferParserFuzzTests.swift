@@ -1,11 +1,13 @@
 import Foundation
+import os
 import XCTest
 @testable import tattle
 
 /// Every byte the sniffer parses is chosen by whoever sent the packet, and a parser that
 /// traps takes the app down with it. The other parser tests are examples; this one runs
 /// every prefix and many random mutations of each fixture through every parser, and through
-/// a namer for the frames, and asserts only that each returns. The mutations come from a
+/// a namer for the frames, and asserts only that each returns, and of the DNS reply that
+/// the namer took its mutations as answers. The mutations come from a
 /// fixed seed, so a failure is the same failure on the next run; `TATTLE_FUZZ_SEED` runs
 /// another seed.
 final class SnifferParserFuzzTests: XCTestCase {
@@ -61,16 +63,21 @@ final class SnifferParserFuzzTests: XCTestCase {
         [0x16, 0x03, 0x01, UInt8(handshake.count >> 8), UInt8(handshake.count & 0xff)] + handshake
     }
 
+    /// This Mac's query to its resolver, and the reply that answers it: same port, id and
+    /// question.
+    static let queryFrame = ethernet(ipv4(from: me, to: resolver, proto: 17, udp(from: 50002, to: 53, [0x12, 0x34] + SnifferParserTests.query.dropFirst(2))))
+    static let replyFrame = ethernet(ipv4(from: resolver, to: me, proto: 17, udp(from: 53, to: 50002, reply)), from: [0x02, 0, 0, 0, 0, 0x01])
+    private static let reply = FlowNamerTests.dnsMessage(question: "www.example.com", answers: [
+        ("www.example.com", 5, [7] + Array("example".utf8) + [3] + Array("com".utf8) + [0]),
+        ("example.com", 1, remote),
+        ("example.com", 28, remote6),
+    ])
+
     /// What the parsers read in the app, by what carries it: handshake messages, records,
     /// datagrams, DNS messages, a request, and whole frames of each link type.
     static let fixtures: [(name: String, bytes: [UInt8])] = {
         let hello = SnifferParserTests.rfcClientHello
         let http = Array("GET /x HTTP/1.1\r\nHost: example.org:8080\r\nAccept: */*\r\n\r\n".utf8)
-        let reply = FlowNamerTests.dnsMessage(question: "www.example.com", answers: [
-            ("www.example.com", 5, [7] + Array("example".utf8) + [3] + Array("com".utf8) + [0]),
-            ("example.com", 1, remote),
-            ("example.com", 28, remote6),
-        ])
         return [
             ("ClientHello", hello),
             ("ClientHello in a record", record(hello)),
@@ -83,8 +90,8 @@ final class SnifferParserFuzzTests: XCTestCase {
             ("Ethernet SYN", ethernet(ipv4(from: me, to: remote, proto: 6, tcp(from: 50000, to: 443, seq: 1, flags: 0x02, [])))),
             ("Ethernet ClientHello", ethernet(ipv4(from: me, to: remote, proto: 6, tcp(from: 50000, to: 443, seq: 2, flags: 0x18, record(hello))))),
             ("Ethernet QUIC Initial", ethernet(ipv4(from: me, to: remote, proto: 17, udp(from: 50001, to: 443, SnifferParserTests.rfcInitial)))),
-            ("Ethernet DNS query", ethernet(ipv4(from: me, to: resolver, proto: 17, udp(from: 50002, to: 53, [0x12, 0x34] + SnifferParserTests.query.dropFirst(2))))),
-            ("Ethernet DNS reply", ethernet(ipv4(from: resolver, to: me, proto: 17, udp(from: 53, to: 50002, reply)), from: [0x02, 0, 0, 0, 0, 0x01])),
+            ("Ethernet DNS query", queryFrame),
+            ("Ethernet DNS reply", replyFrame),
             ("null link IPv6 HTTP request", [30, 0, 0, 0] + ipv6(from: me6, to: remote6, proto: 6, tcp(from: 50003, to: 80, seq: 2, flags: 0x18, http))),
             ("raw IPv6 QUIC Initial", ipv6(from: me6, to: remote6, proto: 17, udp(from: 50004, to: 443, SnifferParserTests.rfcInitial))),
         ]
@@ -146,22 +153,34 @@ final class SnifferParserFuzzTests: XCTestCase {
     func testEveryPrefixAndManyMutationsOfEachFixtureReturnFromEveryParser() {
         let seed = ProcessInfo.processInfo.environment["TATTLE_FUZZ_SEED"].flatMap { UInt64($0) } ?? Self.defaultSeed
         for (index, fixture) in Self.fixtures.enumerated() {
+            // The namer parses a reply only when a query waits for it, and the reply takes
+            // the query out: this Mac asks again before each try at the reply.
+            let isReply = fixture.bytes == Self.replyFrame
+            let namedByReplies = OSAllocatedUnfairLock(initialState: 0)
             let finished = SnifferParserTests.returns(within: 60) {
                 var generator = Generator(state: seed &+ UInt64(index))
                 var namer = FlowNamer(localAddresses: [IPAddress(bytes: Self.me), IPAddress(bytes: Self.me6)],
                                       resolvers: [IPAddress(bytes: Self.resolver)], hardwareAddress: Self.hardware)
                 var time = 1_700_000_000.0
+                let query = isReply ? Packet.parse(Self.queryFrame, dlt: PacketCapture.linkEthernet) : nil
                 for length in 0...fixture.bytes.count {
+                    if let query { _ = namer.observe(query, at: time) }
                     Self.parse(Array(fixture.bytes[..<length]), namer: &namer, at: time)
                 }
                 for round in 0..<Self.mutationsPerFixture {
                     time += 0.01
+                    if let query { _ = namer.observe(query, at: time) }
                     Self.parse(Self.mutate(fixture.bytes, using: &generator), namer: &namer, at: time)
                     if round % 100 == 0 { _ = namer.expire(now: time) }
                 }
                 _ = namer.endCapture()
+                let named = namer.dnsCount
+                namedByReplies.withLock { $0 = named }
             }
             XCTAssertTrue(finished, "a parser did not return on a prefix or a mutation of the \(fixture.name) fixture, seed \(seed)")
+            if isReply {
+                XCTAssertGreaterThan(namedByReplies.withLock { $0 }, 2, "mutated replies reached the map, so the namer parsed them as answers, seed \(seed)")
+            }
         }
     }
 
