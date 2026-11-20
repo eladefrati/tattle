@@ -463,6 +463,26 @@ final class StartupSnapshotTests: XCTestCase {
         XCTAssertNil(row.identity)
     }
 
+    /// A startup item's program, plist and watched paths are known whole, so each is sent
+    /// without the folders under a home: a client's or a cloud drive's name.
+    func testAStartupItemsPathsGoOutWithoutTheirFolders() throws {
+        let folder = "/Users/username/Library/CloudStorage/GoogleDrive-name@example.com/My Drive/Client Acme"
+        let job = job("com.acme.sync", program: "\(folder)/bin/sync", plist: "/Users/username/Library/LaunchAgents/com.acme.sync.plist",
+                      triggers: [.atLoad, .watchPaths(["\(folder)/inbox", "/etc/hosts"])])
+        let snapshot = StartupSnapshot.build(launchd: .init(items: [job], appleCount: 0, unreadable: []), loginItems: [], state: LaunchctlState(), signature: { _ in nil })
+        let item = try XCTUnwrap(snapshot.items.first)
+        let shown = Dictionary(item.facts.map { ($0.name, $0.value) }, uniquingKeysWith: { a, _ in a })
+        XCTAssertEqual(shown["When"], "at login, when \(folder)/inbox, /etc/hosts change", "the panel shows them whole")
+        XCTAssertEqual(shown["Runs"], "\(folder)/bin/sync --run")
+
+        let redactor = Redactor(home: "/Users/username", username: "username", machineNames: [])
+        let sent = Prompt.build(instructions: "x", request: ExplainRequest(kind: .launchItem, key: item.explainKey, facts: item.facts), redactor: redactor)
+        for word in ["name@example.com", "GoogleDrive", "My Drive", "Acme"] { XCTAssertFalse(sent.contains(word), sent) }
+        XCTAssertTrue(sent.contains(#"{"name":"Runs","value":"<home>/Library/CloudStorage/<folders>/sync (1 argument, not sent)"}"#), sent)
+        XCTAssertTrue(sent.contains(#"{"name":"When","value":"at login, when <home>/Library/CloudStorage/<folders>/inbox, /etc/hosts change"}"#), sent)
+        XCTAssertTrue(sent.contains(#"{"name":"Plist","value":"<home>/Library/LaunchAgents/com.acme.sync.plist"}"#), sent)
+    }
+
     /// Whatever is in a folder that cannot be listed is unknown: the group says so.
     func testAFolderThatCannotBeListedIsARowOfItsGroup() throws {
         let url = URL(fileURLWithPath: "/Library/LaunchDaemons")

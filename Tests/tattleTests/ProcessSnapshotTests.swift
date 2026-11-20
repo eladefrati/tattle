@@ -465,6 +465,32 @@ final class ProcessSnapshotTests: XCTestCase {
         XCTAssertTrue(fromChild.contains(#"{"name":"Parent","value":"postgres (pid 700)"}"#), fromChild)
     }
 
+    /// A process's path, its row's and its interpreter's are known whole, so each is sent
+    /// without the folders under the home.
+    func testAProcessesPathGoesOutWithoutItsFolders() throws {
+        let folder = "/Users/username/Clients/Acme Corp"
+        let entries = [
+            ProcessEntry(pid: 1, parentPid: 0, uid: 0, name: "launchd", path: "/sbin/launchd", started: epoch),
+            entry(900, 1, "\(folder)/bin/server"),
+            entry(901, 1, "\(folder)/venv/bin/python3", name: "serve.py", interpreter: "python3"),
+        ]
+        let snapshot = ProcessSnapshot.build(entries: entries, previous: nil, signature: { _ in nil }, responsible: { _ in nil }, takenAt: epoch)
+        let redactor = Redactor(home: "/Users/username", username: "username", machineNames: [])
+        func sent(_ key: String, _ facts: [Fact]) -> String {
+            Prompt.build(instructions: "x", request: ExplainRequest(kind: .process, key: key, facts: facts), redactor: redactor)
+        }
+        let server = try XCTUnwrap(snapshot.item(pid: 900))
+        XCTAssertEqual(server.facts.first { $0.name == "Path" }?.value, "\(folder)/bin/server", "the panel shows it whole")
+        let group = try XCTUnwrap(snapshot.group(id: "pid:900"))
+        let script = try XCTUnwrap(snapshot.item(pid: 901))
+        for prompt in [sent(server.explainKey, server.facts), sent(try XCTUnwrap(group.explainKey), group.facts), sent(script.explainKey, script.facts)] {
+            XCTAssertFalse(prompt.contains("Acme"), prompt)
+            XCTAssertFalse(prompt.contains("Clients"), prompt)
+        }
+        XCTAssertTrue(sent(server.explainKey, server.facts).contains(#"{"name":"Path","value":"<home>/<folders>/server"}"#))
+        XCTAssertTrue(sent(script.explainKey, script.facts).contains(#"{"name":"Runs with","value":"python3 (<home>/<folders>/python3)"}"#))
+    }
+
     func testBuiltinGlossaryResolves() throws {
         let database = try AppDatabase.inMemory()
         let rules = try RuleStore(database: database)

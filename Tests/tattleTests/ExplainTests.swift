@@ -110,6 +110,73 @@ final class RedactorTests: XCTestCase {
         XCTAssertEqual(disks.redact("/Users/username-old/x", as: .launchItem), "/Users/<other-user>/x")
     }
 
+    /// A path known whole is sent as its root, macOS's own folders at its start and its last
+    /// part. The folders between are the user's own words, and text alone cannot show where a
+    /// name with spaces ends.
+    func testAWholePathUnderAHomeOrAnotherDiskLosesItsFolders() {
+        let cut = redactor.cut(path:)
+        XCTAssertEqual(cut("/Users/username/Library/CloudStorage/GoogleDrive-name@example.com/My Drive/Client Acme/sync tool"),
+                       "<home>/Library/CloudStorage/<folders>/sync tool")
+        XCTAssertEqual(cut("/Users/username/dev/client-acme/payroll/bin/server"), "<home>/<folders>/server")
+        XCTAssertEqual(cut("/Users/username/Library/Application Support/Acme/Updater.app/Contents/MacOS/Updater"),
+                       "<home>/Library/Application Support/<folders>/Updater")
+        XCTAssertEqual(cut("/Users/username/Library/LaunchAgents/com.acme.updater.plist"), "<home>/Library/LaunchAgents/com.acme.updater.plist")
+        XCTAssertEqual(cut("/Users/username/Library/Acme/x"), "<home>/Library/<folders>/x", "only macOS's own folders in Library")
+        XCTAssertEqual(cut("/Users/username/Downloads/tool"), "<home>/Downloads/tool")
+        XCTAssertEqual(cut("/Users/username/Downloads/Library/tool"), "<home>/Downloads/<folders>/tool", "Library only straight under the home")
+        XCTAssertEqual(cut("/Users/username/Documents"), "<home>/Documents")
+        XCTAssertEqual(cut("/Users/username/tool"), "<home>/tool")
+        XCTAssertEqual(cut("/Users/username"), "<home>")
+        XCTAssertEqual(cut("/USERS/Username/Clients/Acme/tool"), "<home>/<folders>/tool", "in any case, as APFS reads a path")
+        XCTAssertEqual(cut("/Users/username/../../Users/other/x"), "<home>/<folders>/x")
+
+        XCTAssertEqual(cut("/Users/other/Library/Application Support/Acme/tool"), "/Users/<other-user>/Library/Application Support/<folders>/tool")
+        XCTAssertEqual(cut("/Users/Other User/bin/tool"), "/Users/<other-user>/<folders>/tool", "a name with a space goes whole")
+        XCTAssertEqual(cut("/Users/usernames/x"), "/Users/<other-user>/x", "another account, not the home and more")
+        XCTAssertEqual(cut("/Users/Shared/Client Acme/licences/tool"), "/Users/Shared/<folders>/tool")
+
+        XCTAssertEqual(cut("/Volumes/Spare Disk/Client Acme/bin/tool"), "/Volumes/<volume>/<folders>/tool", "a disk not mounted, whole too")
+        XCTAssertEqual(cut("/Volumes/Backup/tool"), "/Volumes/<volume>/tool")
+        XCTAssertEqual(cut("/Volumes/Backup"), "/Volumes/<volume>")
+        XCTAssertEqual(cut("/Volumes/Backup/Users/username/Documents/Acme/x"), "/Volumes/<volume><home>/Documents/<folders>/x")
+        XCTAssertEqual(cut("/Volumes/Backup Disk/Users/other/bin/x"), "/Volumes/<volume>/Users/<other-user>/<folders>/x")
+        XCTAssertEqual(cut("/System/Volumes/Data/Users/username/dev/acme/x"), "/System/Volumes/Data<home>/<folders>/x")
+        XCTAssertEqual(cut("/System/Volumes/Data/Users/other/dev/acme/x"), "/System/Volumes/Data/Users/<other-user>/<folders>/x")
+
+        for whole in ["/Applications/Acme Tools.app/Contents/MacOS/Acme", "/opt/homebrew/Cellar/postgresql@16/16.4/bin/postgres",
+                      "/Library/Application Support/Acme/bin/tool", "/usr/libexec/trustd", "/System/Volumes/Preboot/x/y/z",
+                      "/private/tmp/build/a/b/tool", "/opt/app/Users/x/y/z", "relative/a/b/c", ""] {
+            XCTAssertEqual(cut(whole), whole, "where software is installed")
+        }
+        let elsewhere = Redactor(home: "/Volumes/Homes/staff/username", username: "username", machineNames: [])
+        XCTAssertEqual(elsewhere.cut(path: "/Volumes/Homes/staff/username/dev/acme/x"), "<home>/<folders>/x", "a home anywhere")
+        XCTAssertEqual(Redactor.addressesOnly.cut(path: "/Users/someone/dev/acme/x"), "/Users/<other-user>/<folders>/x", "no home known")
+    }
+
+    /// Each path a value holds whole is cut where it stands, the longest first, and the rest of
+    /// the value is redacted as before. What is cut holds nothing a later pass would read.
+    func testATextsKnownPathsAreCutBeforeItIsRedacted() {
+        let tool = "/Users/username/Clients/Acme Corp/bin/tool"
+        XCTAssertEqual(redactor.redact("node (\(tool))", paths: [tool], as: .program), "node (<home>/<folders>/tool)")
+        XCTAssertEqual(redactor.redact("\(tool) (2 arguments, not sent)", paths: [tool], as: .launchItem), "<home>/<folders>/tool (2 arguments, not sent)")
+        let watched = ["/Users/username/Clients/Acme Corp/inbox", "/Users/username/Clients/Acme Corp/inbox/urgent items", "/etc/hosts"]
+        XCTAssertEqual(redactor.redact("when \(watched.joined(separator: ", ")) change", paths: watched, as: .launchItem),
+                       "when <home>/<folders>/inbox, <home>/<folders>/urgent items, /etc/hosts change")
+        XCTAssertEqual(redactor.redact("at login", paths: [], as: .launchItem), "at login")
+        XCTAssertEqual(redactor.redact("/Users/username/Clients/Acme/username.py", paths: ["/Users/username/Clients/Acme/username.py"], as: .program),
+                       "<home>/<folders>/username.py", "the last part is read as any name")
+        XCTAssertEqual(redactor.redact("/Users/other/Clients/Acme/x and /Users/other/bin/y", paths: ["/Users/other/Clients/Acme/x"], as: .program),
+                       "/Users/<other-user>/<folders>/x and /Users/<other-user>/bin/y", "a path not known whole is read as text")
+    }
+
+    /// A startup item with no label is known by its plist's path; any other key is a name.
+    func testAStartupItemsKeyThatIsAPathIsCut() {
+        XCTAssertEqual(redactor.redact(key: "/Users/username/Library/LaunchAgents/Client Acme/sync.plist", of: .launchItem),
+                       "<home>/Library/LaunchAgents/<folders>/sync.plist")
+        XCTAssertEqual(redactor.redact(key: "com.username.sync", of: .launchItem), "com.<user>.sync")
+        XCTAssertEqual(redactor.redact(key: "/Users/username/dev/acme/tool", of: .process), "<home>/dev/acme/tool", "a process's key is its name, read as text")
+    }
+
     func testMachineNames() {
         XCTAssertEqual(redactor.redact("host USERS-COMPUTER.local and Users-Computer", as: .host), "host <machine> and <machine>")
     }
@@ -692,6 +759,28 @@ final class PromptTests: XCTestCase {
         }
         XCTAssertEqual(username.redact("com.username.tool.sh", as: .program), "com.<user>.tool.sh")
         XCTAssertEqual(username.redact("com.username.sh.helper", as: .program), "com.<user>.sh.helper", "not the last label")
+    }
+
+    /// A fact that holds a path whole sends it cut, in the value the panel shows or the one
+    /// written for the prompt.
+    func testAFactsPathsGoOutCut() throws {
+        let redactor = Redactor(home: "/Users/username", username: "username", machineNames: [])
+        let program = "/Users/username/Library/CloudStorage/GoogleDrive-name@example.com/My Drive/Client Acme/sync"
+        let facts = [
+            Fact.path("Path", program),
+            Fact(name: "Runs with", value: "bash (\(program))", paths: [program]),
+            Fact(name: "Runs", value: "\(program) --token abc", promptValue: "\(program) (2 arguments, not sent)", paths: [program]),
+            Fact.path("Plist", "/Library/LaunchDaemons/com.acme.sync.plist"),
+        ]
+        let data = try capturedData(in: Prompt.build(instructions: "x", request: ExplainRequest(kind: .launchItem, key: "/Users/username/Clients/Acme/sync.plist", facts: facts), redactor: redactor))
+        XCTAssertEqual(data["facts"] as? [[String: String]], [
+            ["name": "Path", "value": "<home>/Library/CloudStorage/<folders>/sync"],
+            ["name": "Runs with", "value": "bash (<home>/Library/CloudStorage/<folders>/sync)"],
+            ["name": "Runs", "value": "<home>/Library/CloudStorage/<folders>/sync (2 arguments, not sent)"],
+            ["name": "Plist", "value": "/Library/LaunchDaemons/com.acme.sync.plist"],
+        ])
+        XCTAssertEqual((data["item"] as? [String: String])?["key"], "<home>/<folders>/sync.plist")
+        XCTAssertEqual(facts[0].value, program, "the panel still has it")
     }
 
     func testPanelOnlyFactsAndPromptValues() throws {

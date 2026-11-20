@@ -229,6 +229,12 @@ accounts' folders, disk names and Tailscale names stay in them.
 Some of an item is not sent at all. A process that gave itself a title, such as
 `postgres: appuser payroll_prod db01.corp.example.com(54321) idle`, is sent as the program
 alone, `postgres`, and its answer is kept under that name; the panel still shows the title.
+A path under your home folder, another account's or another disk is sent without its
+folders: `~/Library/CloudStorage/<a cloud drive>/Client/bin/sync` goes out as
+`<home>/Library/CloudStorage/<folders>/sync`. Of the folders, only macOS's own at the start
+are kept (`Documents`, `Downloads`, `Library/Application Support` and the like). A path
+anywhere else, such as `/Applications` or `/opt`, is where software is installed and is
+sent whole.
 
 <details>
 <summary>Where a name stays in</summary>
@@ -250,9 +256,11 @@ A name is replaced only where Tattle can tell it from an ordinary word, so some 
   `dev.azure.com` stays on a Mac called `dev`, and `dev.lan` stays unless `lan` is a search
   domain. In a startup item they are replaced only as the author's part, and in a process or
   a port they stay. Straight and curly apostrophes count as one; other spellings do not match.
-- A disk's name with spaces or punctuation is replaced whole only while the disk is mounted.
-  Another account's folder is replaced only at the start of a path or straight after a disk's
-  root, and only up to the first space or punctuation a name rarely holds, so
+- A path loses its folders only where Tattle holds it whole: a program's, a plist's, a file a
+  startup item watches. A path inside other text, such as a reason macOS gave, keeps them.
+  There, a disk's name with spaces or punctuation is replaced whole only while the disk is
+  mounted, and another account's folder is replaced only at the start of a path or straight
+  after a disk's root, and only up to the first space or punctuation a name rarely holds, so
   `/Users/Other User` keeps `User`.
 
 </details>

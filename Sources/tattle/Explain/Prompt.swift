@@ -23,13 +23,16 @@ enum Prompt {
     /// breaks and quotes inside a value, and the three line separators it leaves as they are
     /// are escaped here, so a value cannot pass for a fact or for the end of the block. The
     /// key and the fact values get one redaction: a fact usually repeats the key, so a key
-    /// redacted less would undo it. The default instructions hold nothing of the user's and
-    /// go out as written; edited ones can name the user.
+    /// redacted less would undo it. A path a fact holds whole is cut first. The default
+    /// instructions hold nothing of the user's and go out as written; edited ones can name
+    /// the user.
     static func build(instructions: String, request: ExplainRequest, redactor: Redactor) -> String {
-        let redact = { redactor.redact($0, as: Redactor.Context(request.kind)) }
+        let context = Redactor.Context(request.kind)
         let captured: [String: Any] = [
-            "item": ["kind": label(for: request.kind), "key": redact(request.key)],
-            "facts": request.facts.filter(\.inPrompt).map { ["name": $0.name, "value": redact($0.promptValue ?? $0.value)] },
+            "item": ["kind": label(for: request.kind), "key": redactor.redact(key: request.key, of: request.kind)],
+            "facts": request.facts.filter(\.inPrompt).map {
+                ["name": $0.name, "value": redactor.redact($0.promptValue ?? $0.value, paths: $0.paths, as: context)]
+            },
         ]
         // The input is only strings, so serialization cannot fail.
         let json = try! JSONSerialization.data(withJSONObject: captured, options: [.sortedKeys, .withoutEscapingSlashes])

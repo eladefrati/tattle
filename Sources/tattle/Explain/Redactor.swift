@@ -108,6 +108,84 @@ struct Redactor: Sendable {
         "(?<![\\w.-])" + name + "(?![\\w-]|\\.[\\w-])"
     }
 
+    /// An item's key as a prompt carries it. A startup item with no label is known by its
+    /// plist's path, which is cut as a path.
+    func redact(key: String, of kind: Rule.Kind) -> String {
+        redact(key, paths: kind == .launchItem && key.hasPrefix("/") ? [key] : [], as: Context(kind))
+    }
+
+    /// `text` with each of `paths`, which it holds whole, cut, then redacted as any text.
+    func redact(_ text: String, paths: [String], as context: Context) -> String {
+        var out = text
+        for path in paths.sorted(by: { $0.count > $1.count }) {
+            out = out.replacingOccurrences(of: path, with: cut(path: path))
+        }
+        return redact(out, as: context)
+    }
+
+    /// macOS's own folders in a home folder, and in its Library: the same on every Mac.
+    private static let homeFolders: Set<String> = [
+        "Applications", "Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures", "Public",
+    ]
+    private static let libraryFolders: Set<String> = [
+        "Application Scripts", "Application Support", "Caches", "CloudStorage", "Containers", "Group Containers",
+        "LaunchAgents", "Logs", "Mobile Documents", "Preferences", "Services",
+    ]
+
+    /// A whole path as a prompt carries it. Under a home folder, another account's or another
+    /// disk, the folders are the user's own words (a client, a project, a cloud drive named
+    /// with an email address): the path goes out as its root, macOS's own folders at its start
+    /// and its last part, "<home>/Library/Application Support/<folders>/tool". Any other path
+    /// is where software is installed and goes out whole.
+    func cut(path: String) -> String {
+        guard path.hasPrefix("/") else { return path }
+        let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
+        let homeParts = home.split(separator: "/").map(String.init)
+        var rest = path.split(separator: "/").map(String.init)[...]
+        // Whether the path goes on through the home folder, in any case, as APFS reads a path.
+        func dropHome() -> Bool {
+            guard !homeParts.isEmpty, rest.count >= homeParts.count, zip(rest, homeParts).allSatisfy(same) else { return false }
+            rest = rest.dropFirst(homeParts.count)
+            return true
+        }
+        var root = ""
+        var isAccount = false
+        if dropHome() {
+            (root, isAccount) = ("<home>", true)
+        } else {
+            // A disk's root, then an account on it: the boot disk's firmlink keeps its name.
+            var isPersonal = false
+            if rest.count >= 3, same(rest[rest.startIndex], "System"), same(rest[rest.startIndex + 1], "Volumes") {
+                root = "/System/Volumes/" + rest[rest.startIndex + 2]
+                rest = rest.dropFirst(3)
+            } else if rest.count >= 2, same(rest[rest.startIndex], "Volumes") {
+                (root, isPersonal) = ("/Volumes/<volume>", true)
+                rest = rest.dropFirst(2)
+            }
+            if dropHome() {
+                (root, isAccount) = (root + "<home>", true)
+            } else if rest.count >= 2, same(rest[rest.startIndex], "Users") {
+                // /Users/Shared is no account, but what is in it is still the user's.
+                root += same(rest[rest.startIndex + 1], "Shared") ? "/Users/Shared" : "/Users/<other-user>"
+                rest = rest.dropFirst(2)
+                isAccount = true
+            } else if !isPersonal {
+                return path
+            }
+        }
+        var kept: [String] = []
+        if isAccount, rest.count > 1, let first = rest.first, Self.homeFolders.contains(first) {
+            kept.append(first)
+            rest = rest.dropFirst()
+            if first == "Library", rest.count > 1, let second = rest.first, Self.libraryFolders.contains(second) {
+                kept.append(second)
+                rest = rest.dropFirst()
+            }
+        }
+        let tail = rest.count > 1 ? ["<folders>", rest[rest.endIndex - 1]] : Array(rest)
+        return ([root] + kept + tail).joined(separator: "/")
+    }
+
     func redact(_ text: String, as context: Context) -> String {
         let captured = context != .instructions
         var out = text

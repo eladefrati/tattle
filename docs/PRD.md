@@ -220,8 +220,10 @@ they already have. How each preset is run: [design](design.md#llm-presets).
 Before anything is sent, the item and its facts are redacted: the user's home path and
 username, private and local IP addresses, the Mac's names, Tailscale device names, other
 accounts' folders, disk names, and a public address a port is bound to are replaced with
-placeholders. A name is replaced only where it can be told from an ordinary word, so some
-stay; the README lists which. The default instructions go out as written. Edited
+placeholders. A path held whole (a program's, a plist's, a watched file's) that lies under
+a home folder or on another disk goes out as its root, macOS's own folders at its start and
+its last part; any other path goes out whole. A name is replaced only where it can be told
+from an ordinary word, so some stay; the README lists which. The default instructions go out as written. Edited
 instructions lose the home path in any case, the username, the Mac's names with either
 apostrophe, and private or local addresses unless spelled with hyphens; a dotted name such
 as `com.username.helper`, other accounts' folders, disk names and Tailscale names stay in them.

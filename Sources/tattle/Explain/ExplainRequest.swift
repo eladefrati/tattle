@@ -40,12 +40,22 @@ struct Fact: Equatable, Sendable {
     var promptValue: String?
     /// False for a fact only the panel shows.
     var inPrompt: Bool
+    /// The paths in the value, each whole. Text alone does not show where a path with spaces
+    /// ends; known whole, a path under a home folder or on another disk is sent without its
+    /// folders (`Redactor.cut`).
+    var paths: [String]
 
-    init(name: String, value: String, promptValue: String? = nil, inPrompt: Bool = true) {
+    init(name: String, value: String, promptValue: String? = nil, inPrompt: Bool = true, paths: [String] = []) {
         self.name = name
         self.value = value
         self.promptValue = promptValue
         self.inPrompt = inPrompt
+        self.paths = paths
+    }
+
+    /// A fact whose value is one path.
+    static func path(_ name: String, _ path: String) -> Fact {
+        Fact(name: name, value: path, paths: [path])
     }
 
     static func signedBy(_ signature: CodeSignature, as name: String = "Signed by") -> Fact {

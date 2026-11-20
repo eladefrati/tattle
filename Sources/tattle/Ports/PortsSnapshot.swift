@@ -94,9 +94,9 @@ struct PortItem: Equatable, Sendable, Identifiable {
             Fact(name: "Process", value: processName + " (pid \(pid))", promptValue: process?.program.map { $0 + " (pid \(pid))" }),
         ]
         if let interpreter = process?.interpreter, let path = process?.path {
-            facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))"))
+            facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))", paths: [path]))
         } else if let path = process?.path {
-            facts.append(Fact(name: "Path", value: path))
+            facts.append(.path("Path", path))
         }
         for (signature, label, teamLabel) in [(signature, "Signed by", "Team"), (interpreterSignature, "Interpreter signed by", "Interpreter team")] {
             guard let signature else { continue }

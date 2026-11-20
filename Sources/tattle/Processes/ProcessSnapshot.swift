@@ -145,9 +145,9 @@ struct ProcessItem: Equatable, Sendable, Identifiable {
     var facts: [Fact] {
         var facts = [Fact(name: "Process", value: "\(name) (pid \(pid))", promptValue: program.map { "\($0) (pid \(pid))" })]
         if let interpreter, let path {
-            facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))"))
+            facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))", paths: [path]))
         } else if let path {
-            facts.append(Fact(name: "Path", value: path))
+            facts.append(.path("Path", path))
         }
         let signers = [(signature, "Signed by", "Team"), (interpreterSignature, "Interpreter signed by", "Interpreter team")]
         for (signature, label, teamLabel) in signers {
@@ -305,7 +305,7 @@ struct ProcessGroup: Equatable, Sendable, Identifiable {
 
     var facts: [Fact] {
         var facts = [Fact(name: "Processes", value: String(members.count))]
-        if let path { facts.append(Fact(name: "Path", value: path)) }
+        if let path { facts.append(.path("Path", path)) }
         if let signature {
             facts.append(.signedBy(signature))
             if let team = signature.teamIdentifier { facts.append(Fact(name: "Team", value: team)) }

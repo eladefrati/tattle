@@ -102,6 +102,19 @@ final class PortsSnapshotTests: XCTestCase {
         XCTAssertTrue(sent.contains(#"{"name":"Process","value":"postgres (pid 700)"}"#), sent)
     }
 
+    /// A listener's path is known whole, so it is sent without the folders under the home.
+    func testAListenersPathGoesOutWithoutItsFolders() throws {
+        let snapshot = PortsSnapshot.build(
+            entries: [entry(.tcp, "127.0.0.1", 8080, pid: 700)], services: .empty,
+            processes: { _ in self.process(700, "/Users/username/Clients/Acme Corp/bin/server") }, signature: { _ in nil })
+        let item = try XCTUnwrap(snapshot.items.first)
+        XCTAssertEqual(item.facts.first { $0.name == "Path" }?.value, "/Users/username/Clients/Acme Corp/bin/server", "the panel shows it whole")
+        let redactor = Redactor(home: "/Users/username", username: "username", machineNames: [])
+        let sent = Prompt.build(instructions: "x", request: ExplainRequest(kind: .port, key: item.explainKey, facts: item.facts), redactor: redactor)
+        XCTAssertFalse(sent.contains("Acme"), sent)
+        XCTAssertTrue(sent.contains(#"{"name":"Path","value":"<home>/<folders>/server"}"#), sent)
+    }
+
     /// A script listening on a port reads as the script, as it does in Processes and Network,
     /// and not as its interpreter, which is Apple's.
     func testAListenerIsReadAsTheCodeItRuns() throws {

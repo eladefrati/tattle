@@ -119,15 +119,18 @@ Preconditions:
   - a script `<dir>/com.<login>.tool.sh` run by `/bin/sh` (row `com.<login>.tool.sh`): the key
     and `Process` read `com.<user>.tool.sh`; scripts `io.<login>.sh` and `db.<login>.sh` stay
     whole;
-  - a plist running `/Users/someone/bin/tool`: `Runs` reads `/Users/<other-user>/bin/tool (1
-    argument, not sent)`; through the firmlink, `/System/Volumes/Data/Users/someone/bin/tool`,
-    reads `/System/Volumes/Data/Users/<other-user>/bin/tool`; `/Volumes/Spare Disk/Users/someone/
-    bin/tool`, no such disk mounted, reads `/Volumes/<volume> Disk/Users/<other-user>/bin/tool`;
-    one running `/opt/app/users/tool` is unchanged, and `/opt/app/users/<login>/tool` reads
-    `/opt/app/users/<user>/tool`; one running `/Volumes/Proof Disk/bin/tool` with that disk
-    mounted (`hdiutil create -size 2m -fs HFS+ -volname "Proof Disk" <dmg>`, `hdiutil attach
-    -nobrowse <dmg>`) reads `/Volumes/<volume>/bin/tool (1 argument, not sent)`, also when the
-    disk's name holds the login;
+  - a plist running `/Users/someone/bin/tool`: `Runs` reads `/Users/<other-user>/<folders>/tool
+    (1 argument, not sent)`; through the firmlink, `/System/Volumes/Data/Users/someone/bin/tool`,
+    reads `/System/Volumes/Data/Users/<other-user>/<folders>/tool`; `/Volumes/Spare Disk/Users/
+    someone/bin/tool`, no such disk mounted, reads `/Volumes/<volume>/Users/<other-user>/
+    <folders>/tool`; one running `/opt/app/users/tool` is unchanged, and
+    `/opt/app/users/<login>/tool` reads `/opt/app/users/<user>/tool`; one running
+    `/Volumes/Proof Disk/bin/tool`, the disk mounted or not, reads `/Volumes/<volume>/<folders>/
+    tool (1 argument, not sent)`;
+  - a plist in `~/Library/LaunchAgents` running `~/<a folder>/<another>/bin/tool` and watching
+    `~/<a folder>/inbox` (`WatchPaths`): the panel shows each path whole; in the prompt `Runs`
+    reads `<home>/<folders>/tool (1 argument, not sent)`, `When` `when <home>/<folders>/inbox
+    changes`, and `Plist` `<home>/Library/LaunchAgents/<label>.plist`, macOS's own folders kept;
   - `prompt.instructions` saved with the Mac's name and the login in it: the prompt's first
     line has `<machine>` and `<user>`. Saved as `Steps 10-20-30-40 on 10.0.0.5 for <login> at
     /USERS/<LOGIN>/x and com.<login>.helper.`: it reads `Steps 10-20-30-40 on <private-ip> for
