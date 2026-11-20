@@ -193,7 +193,14 @@ struct Redactor: Sendable {
                 rest = rest.dropFirst()
             }
         }
-        let tail = rest.count > 1 ? ["<folders>", rest[rest.endIndex - 1]] : Array(rest)
+        var tail = rest.count > 1 ? ["<folders>", rest[rest.endIndex - 1]] : Array(rest)
+        // Straight inside a Users or a Volumes folder, wherever it is, the last part is an
+        // account's or a disk's name, as it is in any text. /Users/Shared is no account.
+        if rest.count > 1 {
+            let (parent, last) = (rest[rest.endIndex - 2], rest[rest.endIndex - 1])
+            let name = same(parent, "Volumes") ? "<volume>" : same(parent, "Users") && !same(last, "Shared") ? "<other-user>" : nil
+            if let name { tail = (rest.count > 2 ? ["<folders>"] : []) + [parent, name] }
+        }
         return ([root] + kept + tail).joined(separator: "/")
     }
 

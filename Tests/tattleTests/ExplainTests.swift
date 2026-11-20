@@ -144,6 +144,17 @@ final class RedactorTests: XCTestCase {
         XCTAssertEqual(cut("/System/Volumes/Data/Users/username/dev/acme/x"), "/System/Volumes/Data<home>/<folders>/x")
         XCTAssertEqual(cut("/System/Volumes/Data/Users/other/dev/acme/x"), "/System/Volumes/Data/Users/<other-user>/<folders>/x")
 
+        // The last part straight inside a Users or a Volumes folder is an account's or a
+        // disk's name, wherever the folder is.
+        XCTAssertEqual(cut("/Users/username/Volumes/ClientNAS"), "<home>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Users/username/Users/someone"), "<home>/Users/<other-user>")
+        XCTAssertEqual(cut("/Users/username/Client (Acme)/volumes/Spare Disk"), "<home>/<folders>/volumes/<volume>")
+        XCTAssertEqual(cut("/Users/username/Library/Users/someone"), "<home>/Library/Users/<other-user>")
+        XCTAssertEqual(cut("/Users/other/Volumes/ClientNAS"), "/Users/<other-user>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Volumes/Backup/Volumes/Inner Disk"), "/Volumes/<volume>/Volumes/<volume>")
+        XCTAssertEqual(cut("/Users/username/Users/Shared"), "<home>/<folders>/Shared", "no account")
+        XCTAssertEqual(cut("/Users/username/Volumes/ClientNAS/bin/tool"), "<home>/<folders>/tool", "a folder between is not sent in any case")
+
         for whole in ["/Applications/Acme Tools.app/Contents/MacOS/Acme", "/opt/homebrew/Cellar/postgresql@16/16.4/bin/postgres",
                       "/Library/Application Support/Acme/bin/tool", "/usr/libexec/trustd", "/System/Volumes/Preboot/x/y/z",
                       "/private/tmp/build/a/b/tool", "/opt/app/Users/x/y/z", "relative/a/b/c", ""] {

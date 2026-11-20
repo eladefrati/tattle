@@ -483,6 +483,17 @@ final class StartupSnapshotTests: XCTestCase {
         XCTAssertTrue(sent.contains(#"{"name":"Plist","value":"<home>/Library/LaunchAgents/com.acme.sync.plist"}"#), sent)
     }
 
+    /// A watched folder that is a disk or an account, under a Volumes or a Users folder in the
+    /// home, goes out as the placeholder a path in any text gets.
+    func testAWatchedDiskOrAccountUnderTheHomeGoesOutAsAPlaceholder() throws {
+        let job = job("com.acme.sync", triggers: [.watchPaths(["/Users/username/Volumes/ClientNAS", "/Users/username/Users/someone"])])
+        let snapshot = StartupSnapshot.build(launchd: .init(items: [job], appleCount: 0, unreadable: []), loginItems: [], state: LaunchctlState(), signature: { _ in nil })
+        let item = try XCTUnwrap(snapshot.items.first)
+        let redactor = Redactor(home: "/Users/username", username: "username", machineNames: [])
+        let sent = Prompt.build(instructions: "x", request: ExplainRequest(kind: .launchItem, key: item.explainKey, facts: item.facts), redactor: redactor)
+        XCTAssertTrue(sent.contains(#"{"name":"When","value":"when <home>/Volumes/<volume>, <home>/Users/<other-user> change"}"#), sent)
+    }
+
     /// A plist's author picks how many paths its job watches. Each is held apart from the
     /// words around it, so none is searched for: four times the paths take about four times as
     /// long to send, not sixteen.

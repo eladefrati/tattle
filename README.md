@@ -234,7 +234,9 @@ alone, `postgres`, and its answer is kept under that name; the panel still shows
 A path under your home folder, another account's or another disk is sent without its
 folders: `~/Library/CloudStorage/<a cloud drive>/Client/bin/sync` goes out as
 `<home>/Library/CloudStorage/<folders>/sync`. Of the folders, only macOS's own at the start
-are kept (`Documents`, `Downloads`, `Library/Application Support` and the like). A path
+are kept (`Documents`, `Downloads`, `Library/Application Support` and the like). A last part
+straight inside a `Users` or a `Volumes` folder is an account's or a disk's name and goes
+out as a placeholder: `~/Volumes/NAS` as `<home>/Volumes/<volume>`. A path
 anywhere else, such as `/Applications` or `/opt`, is where software is installed and is
 sent whole. A host name that only your network resolves is sent as a placeholder, even at
 a public address: a name under `.local`, `.lan`, `.internal`, `.home.arpa`, `.home`, `.corp`
