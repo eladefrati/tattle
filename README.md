@@ -226,6 +226,10 @@ case, your username, the Mac's names with either apostrophe, and private or loca
 addresses unless spelled with hyphens; a dotted name such as `com.username.helper`, other
 accounts' folders, disk names and Tailscale names stay in them.
 
+Some of an item is not sent at all. A process that gave itself a title, such as
+`postgres: appuser payroll_prod db01.corp.example.com(54321) idle`, is sent as the program
+alone, `postgres`, and its answer is kept under that name; the panel still shows the title.
+
 <details>
 <summary>Where a name stays in</summary>
 

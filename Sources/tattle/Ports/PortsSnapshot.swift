@@ -74,7 +74,8 @@ struct PortItem: Equatable, Sendable, Identifiable {
     var isApplesProgram: Bool { ApplesProgram.isNamed(processName, path: process?.path, signature: signature) }
 
     /// Knowledge-base key: the process and the port, so "ControlCenter:tcp/*" can be a rule.
-    var explainKey: String { "\(processName):\(proto.rawValue)/\(port)" }
+    /// Of a process that set itself a title, the program alone (`ProcessEntry.program`).
+    var explainKey: String { "\(process?.program ?? processName):\(proto.rawValue)/\(port)" }
 
     /// The app's sentence that opens "Why it is probably here": who listens, and who can reach
     /// it. In the past tense once the port has closed.
@@ -90,7 +91,7 @@ struct PortItem: Equatable, Sendable, Identifiable {
         var facts = [
             Fact(name: "Port", value: "\(String(port)) \(proto.rawValue.uppercased())"),
             Fact(name: "Bound to", value: binding.text + " (\(families))", promptValue: binding.promptText.map { $0 + " (\(families))" }),
-            Fact(name: "Process", value: processName + " (pid \(pid))"),
+            Fact(name: "Process", value: processName + " (pid \(pid))", promptValue: process?.program.map { $0 + " (pid \(pid))" }),
         ]
         if let interpreter = process?.interpreter, let path = process?.path {
             facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))"))

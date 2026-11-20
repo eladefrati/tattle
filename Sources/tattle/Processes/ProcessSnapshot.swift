@@ -58,9 +58,13 @@ struct ProcessItem: Equatable, Sendable, Identifiable {
     var pid: Int32
     var parentPid: Int32
     var parentName: String?
+    /// The parent's program, when its name is a title (`ProcessEntry.program`).
+    var parentProgram: String?
     var uid: UInt32
     var name: String
     var path: String?
+    /// The program alone, when `name` is a title the process set (`ProcessEntry.program`).
+    var program: String?
     /// Set when the process runs code that is not its executable's: a script, inline code,
     /// standard input under launchd, or a developer tool's (`ProcessEntry.interpreter`).
     var interpreter: String?
@@ -115,8 +119,9 @@ struct ProcessItem: Equatable, Sendable, Identifiable {
     }
 
     /// Knowledge-base key: the name, so a rule reads "nsurlsessiond" and a glob like
-    /// "Slack Helper*" covers the helpers. The path is a fact.
-    var explainKey: String { name }
+    /// "Slack Helper*" covers the helpers. The path is a fact. Of a title, the program alone:
+    /// the rest is the process's own words, and they stay out of a prompt and the database.
+    var explainKey: String { program ?? name }
 
     /// The app's sentence that opens "Why it is probably here": what started the process.
     func whyHere(gone: Bool) -> String { origin(gone: gone) + "." }
@@ -138,7 +143,7 @@ struct ProcessItem: Equatable, Sendable, Identifiable {
     }
 
     var facts: [Fact] {
-        var facts = [Fact(name: "Process", value: "\(name) (pid \(pid))")]
+        var facts = [Fact(name: "Process", value: "\(name) (pid \(pid))", promptValue: program.map { "\($0) (pid \(pid))" })]
         if let interpreter, let path {
             facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))"))
         } else if let path {
@@ -151,7 +156,10 @@ struct ProcessItem: Equatable, Sendable, Identifiable {
             if let team = signature.teamIdentifier { facts.append(Fact(name: teamLabel, value: team)) }
         }
         if let app, app.name != name { facts.append(Fact(name: "Part of", value: app.name)) }
-        if pid > 0 { facts.append(Fact(name: "Parent", value: "\(parentName ?? "pid \(parentPid)") (pid \(parentPid))")) }
+        if pid > 0 {
+            facts.append(Fact(name: "Parent", value: "\(parentName ?? "pid \(parentPid)") (pid \(parentPid))",
+                              promptValue: parentProgram.map { "\($0) (pid \(parentPid))" }))
+        }
         // A folder name can say what the user is working on: the panel shows it, the model is not told.
         if let directory = workingDirectoryText { facts.append(Fact(name: "Working in", value: directory, inPrompt: false)) }
         facts.append(.runsAs(uid))
@@ -236,8 +244,15 @@ struct ProcessGroup: Equatable, Sendable, Identifiable {
         kind != .system && members.allSatisfy { ApplesProgram.isNamed(name, path: $0.path, signature: $0.signature) }
     }
 
-    /// The group explains as its one process, or as the app; macOS is not one thing.
-    var explainKey: String? { kind == .system ? nil : name }
+    /// The group explains as its one process, or as the app; macOS is not one thing. A process
+    /// is asked about by its own key, which of a title is the program alone.
+    var explainKey: String? {
+        switch kind {
+        case .app: name
+        case .process: leader?.explainKey ?? name
+        case .system: nil
+        }
+    }
 
     /// Members as a tree: each process followed by its children, largest first at every
     /// level, with the depth for indenting. A member whose parent is outside the group
@@ -366,7 +381,8 @@ struct ProcessSnapshot: Equatable, Sendable {
             }
             items.append(ProcessItem(
                 pid: entry.pid, parentPid: entry.parentPid, parentName: byPid[entry.parentPid]?.name,
-                uid: entry.uid, name: entry.name, path: entry.path, interpreter: entry.interpreter,
+                parentProgram: byPid[entry.parentPid]?.program,
+                uid: entry.uid, name: entry.name, path: entry.path, program: entry.program, interpreter: entry.interpreter,
                 workingDirectory: entry.workingDirectory, started: entry.started,
                 usage: entry.usage, cpu: cpu,
                 signature: entry.codeSignature(executable: executableSignature),

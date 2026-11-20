@@ -13,6 +13,10 @@ struct ProcessEntry: Equatable, Sendable, Identifiable {
     /// command name, which is cut at 16 characters.
     var name: String
     var path: String?
+    /// The program alone, when `name` is a title the process set for itself
+    /// ("postgres: user db host(54321) idle"), which can hold a login, a database or a host.
+    /// The panel shows the title; a prompt and the key an answer is kept under carry this.
+    var program: String?
     /// The interpreter's file name when the process runs code that is not its executable's
     /// (a script file, inline code, standard input under launchd, what one of Apple's
     /// developer tools is told to run, or code its unreadable arguments would name), so a row
@@ -45,14 +49,14 @@ struct ProcessEntry: Equatable, Sendable, Identifiable {
     /// process that set its title keeps it.
     static func name(
         path: String?, arguments: [String]?, command: String, signature: CodeSignature? = nil, startedByLaunchd: Bool = false
-    ) -> (name: String, interpreter: String?, runsUnnamedCode: Bool, script: String?) {
+    ) -> (name: String, interpreter: String?, runsUnnamedCode: Bool, script: String?, program: String?) {
         let executable = path.map { ($0 as NSString).lastPathComponent }
         var interpreter: String?
         var runsUnnamedCode = false
         if let path {
             let identity = LaunchedCode.Identity(path: path, signature: signature)
             switch LaunchedCode.running(executable: path, arguments: arguments.map { Array($0.dropFirst()) }, identity: identity) {
-            case .script(let script, let name): return (scriptName(script), name, false, script)
+            case .script(let script, let name): return (scriptName(script), name, false, script, nil)
             case .inline(let name), .unnamed(let name):
                 interpreter = name
                 runsUnnamedCode = true
@@ -71,9 +75,26 @@ struct ProcessEntry: Equatable, Sendable, Identifiable {
             let isHomeFolder = first.hasPrefix("~") && first.drop { $0 != "/" }.allSatisfy { $0 == "/" }
             let isRelativeFolder = !first.hasPrefix("/") && (started == "." || started == "..")
             let namesFolder = !isTitle && (isHomeFolder || isRelativeFolder)
-            if !started.isEmpty, !namesFolder { return (String(started), interpreter, runsUnnamedCode, nil) }
+            if !started.isEmpty, !namesFolder {
+                let program = isTitle ? Self.program(inTitle: started, file: executable ?? command) : nil
+                return (String(started), interpreter, runsUnnamedCode, nil, program)
+            }
         }
-        return (executable ?? command, interpreter, runsUnnamedCode, nil)
+        return (executable ?? command, interpreter, runsUnnamedCode, nil, nil)
+    }
+
+    /// The program in a title: the file's name when the title starts with it, as a program
+    /// whose name holds spaces does ("Acme Helper --type=gpu"), else the title's first word
+    /// without its colon ("npm exec pkg" is npm, though node runs it), else the file's name.
+    /// Nil when that is the whole title.
+    private static func program(inTitle title: Substring, file: String) -> String? {
+        var program = file
+        if !title.hasPrefix(file + " "), !title.hasPrefix(file + ":"), title != file {
+            var word = title.prefix { $0 != " " }
+            while word.hasSuffix(":") { word.removeLast() }
+            if !word.isEmpty { program = String(word) }
+        }
+        return program == title ? nil : program
     }
 
     /// This entry named by its executable's signature, for one listed without it: a renamed
@@ -82,7 +103,7 @@ struct ProcessEntry: Equatable, Sendable, Identifiable {
         guard let path else { return self }
         let named = Self.name(path: path, arguments: arguments, command: name, signature: signature, startedByLaunchd: parentPid == 1)
         var entry = self
-        (entry.name, entry.interpreter, entry.runsUnnamedCode, entry.script) = named
+        (entry.name, entry.interpreter, entry.runsUnnamedCode, entry.script, entry.program) = named
         return entry
     }
 
@@ -290,7 +311,7 @@ enum ProcessTable {
         let started = info.kp_proc.p_starttime
         return ProcessEntry(
             pid: pid, parentPid: info.kp_eproc.e_ppid, uid: info.kp_eproc.e_ucred.cr_uid,
-            name: named.name, path: path, interpreter: named.interpreter, runsUnnamedCode: named.runsUnnamedCode,
+            name: named.name, path: path, program: named.program, interpreter: named.interpreter, runsUnnamedCode: named.runsUnnamedCode,
             script: named.script, arguments: arguments,
             workingDirectory: own ? workingDirectory(pid: pid) : nil,
             started: Date(timeIntervalSince1970: Double(started.tv_sec) + Double(started.tv_usec) / 1_000_000))

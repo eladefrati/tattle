@@ -433,6 +433,38 @@ final class ProcessSnapshotTests: XCTestCase {
         XCTAssertTrue(sent.contains(#"{"name":"Runs as","value":"you"}"#), sent)
     }
 
+    /// The panel shows a process's title whole. The model, and the key an answer is kept under,
+    /// get the program: for the process, for its row, and where it is another's parent.
+    func testATitledProcessGoesOutAndIsKeptAsItsProgram() throws {
+        let title = "postgres: appuser payroll_prod db01.corp.example.com(54321) idle"
+        let postgres = "/opt/pg/bin/postgres"
+        let named = ProcessEntry.name(path: postgres, arguments: [title, ""], command: "postgres")
+        let entries = [
+            ProcessEntry(pid: 1, parentPid: 0, uid: 0, name: "launchd", path: "/sbin/launchd", started: epoch),
+            ProcessEntry(pid: 700, parentPid: 1, uid: 501, name: named.name, path: postgres, program: named.program, started: epoch),
+            entry(701, 700, "/opt/pg/bin/pg_helper"),
+        ]
+        let snapshot = ProcessSnapshot.build(entries: entries, previous: nil, signature: sign, responsible: { _ in nil }, takenAt: epoch)
+        let item = try XCTUnwrap(snapshot.item(pid: 700))
+        XCTAssertEqual(item.name, title, "the row keeps the title")
+        XCTAssertEqual(item.explainKey, "postgres")
+        XCTAssertEqual(item.facts.first { $0.name == "Process" }?.value, "\(title) (pid 700)", "and so does the detail")
+        let group = try XCTUnwrap(snapshot.group(id: "pid:700"))
+        XCTAssertEqual(group.name, title)
+        XCTAssertEqual(group.explainKey, "postgres")
+        let child = try XCTUnwrap(snapshot.item(pid: 701))
+        XCTAssertEqual(child.facts.first { $0.name == "Parent" }?.value, "\(title) (pid 700)")
+
+        for (key, facts) in [(item.explainKey, item.facts), (try XCTUnwrap(group.explainKey), group.facts), (child.explainKey, child.facts)] {
+            let sent = Prompt.build(instructions: "x", request: ExplainRequest(kind: .process, key: key, facts: facts), redactor: .addressesOnly)
+            for word in ["appuser", "payroll_prod", "db01", "idle"] { XCTAssertFalse(sent.contains(word), sent) }
+        }
+        let sent = Prompt.build(instructions: "x", request: ExplainRequest(kind: .process, key: item.explainKey, facts: item.facts), redactor: .addressesOnly)
+        XCTAssertTrue(sent.contains(#"{"name":"Process","value":"postgres (pid 700)"}"#), sent)
+        let fromChild = Prompt.build(instructions: "x", request: ExplainRequest(kind: .process, key: child.explainKey, facts: child.facts), redactor: .addressesOnly)
+        XCTAssertTrue(fromChild.contains(#"{"name":"Parent","value":"postgres (pid 700)"}"#), fromChild)
+    }
+
     func testBuiltinGlossaryResolves() throws {
         let database = try AppDatabase.inMemory()
         let rules = try RuleStore(database: database)

@@ -86,6 +86,22 @@ final class PortsSnapshotTests: XCTestCase {
         XCTAssertNil(try boundTo("0.0.0.0", v6: false)?.promptValue)
     }
 
+    /// A listener that set itself a title: the panel shows it whole, and the key and the
+    /// `Process` fact a prompt carries name the program.
+    func testATitledListenerGoesOutAndIsKeptAsItsProgram() throws {
+        let title = "postgres: appuser payroll_prod db01.corp.example.com(54321) idle"
+        let snapshot = PortsSnapshot.build(
+            entries: [entry(.tcp, "127.0.0.1", 5432, pid: 700)], services: .empty,
+            processes: { _ in self.process(700, "/opt/pg/bin/postgres", arguments: [title, ""]) }, signature: { _ in nil })
+        let item = try XCTUnwrap(snapshot.items.first)
+        XCTAssertEqual(item.processName, title, "the row keeps the title")
+        XCTAssertEqual(item.explainKey, "postgres:tcp/5432")
+        XCTAssertEqual(item.facts.first { $0.name == "Process" }?.value, "\(title) (pid 700)")
+        let sent = Prompt.build(instructions: "x", request: ExplainRequest(kind: .port, key: item.explainKey, facts: item.facts), redactor: .addressesOnly)
+        for word in ["appuser", "payroll_prod", "db01", "idle"] { XCTAssertFalse(sent.contains(word), sent) }
+        XCTAssertTrue(sent.contains(#"{"name":"Process","value":"postgres (pid 700)"}"#), sent)
+    }
+
     /// A script listening on a port reads as the script, as it does in Processes and Network,
     /// and not as its interpreter, which is Apple's.
     func testAListenerIsReadAsTheCodeItRuns() throws {

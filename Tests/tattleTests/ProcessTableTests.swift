@@ -102,6 +102,32 @@ final class ProcessTableTests: XCTestCase {
         XCTAssertEqual(started("~ maintenance"), "~ maintenance", "a title is kept as written")
     }
 
+    /// A title a process sets for itself can hold a login, a database and a host. The row keeps
+    /// it whole; `program` is what a prompt and a kept answer's key carry in its place.
+    func testATitleIsCutToItsProgram() {
+        func named(_ title: String, path: String? = "/opt/pg/bin/postgres", command: String = "postgres") -> (name: String, program: String?) {
+            let named = ProcessEntry.name(path: path, arguments: [title, ""], command: command)
+            return (named.name, named.program)
+        }
+        let backend = named("postgres: appuser payroll_prod db01.corp.example.com(54321) idle")
+        XCTAssertEqual(backend.name, "postgres: appuser payroll_prod db01.corp.example.com(54321) idle", "the row keeps the title")
+        XCTAssertEqual(backend.program, "postgres")
+        XCTAssertEqual(named("npm exec @scope/pkg", path: "/opt/node/bin/node", command: "node").program, "npm", "the title's first word, not the file")
+        XCTAssertEqual(named("sshd-session: username@ttys003", path: "/usr/libexec/sshd-session").program, "sshd-session")
+        XCTAssertEqual(named("-worker: tenant acme", path: "/x/worker").program, "worker")
+        let helper = "/Applications/Acme.app/Contents/MacOS/Acme Helper"
+        XCTAssertEqual(named("Acme Helper --tenant example", path: helper).program, "Acme Helper", "a program whose name holds spaces")
+        XCTAssertEqual(named("Acme Helper: tenant example", path: helper).program, "Acme Helper")
+        XCTAssertNil(named("Acme Helper", path: helper).program, "its own name is no title")
+        XCTAssertEqual(named(": appuser payroll_prod").program, "postgres", "nothing before the colon: the file")
+        XCTAssertEqual(named(": appuser payroll_prod", path: nil, command: "postgres").program, "postgres", "or the kernel's name")
+
+        XCTAssertNil(ProcessEntry.name(path: "/bin/zsh", arguments: ["-zsh"], command: "zsh").program, "a name is not a title")
+        XCTAssertNil(ProcessEntry.name(path: "/x/My Tool", arguments: ["/x/My Tool"], command: "My Tool").program, "nor is a path with a space")
+        XCTAssertNil(ProcessEntry.name(path: "/usr/bin/python3", arguments: ["python3", "/x/my script.py"], command: "python3").program, "nor a script's file name")
+        XCTAssertNil(ProcessEntry.name(path: "/usr/libexec/trustd", arguments: nil, command: "trustd").program)
+    }
+
     func testALineReadsAsTheListHasIt() throws {
         let records = try XCTUnwrap(ProcessTable.records())
         let lines = records.lines([getpid(), 0])

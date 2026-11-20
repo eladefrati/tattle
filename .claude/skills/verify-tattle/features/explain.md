@@ -107,9 +107,11 @@ Preconditions:
   (`nohup zsh -c "exec -a '<title>' /bin/sleep 900" &` from a script in Ghostty; Processes,
   row `Ghostty,`, then the title) and add plists, not loaded, to `~/Library/LaunchAgents`
   (Startup, `Refresh`, the label). Press `Explain` on each and read the recorded prompt:
-  - title `postgres: <login> <machine name> [local] idle`: the key and `Process` read
-    `postgres: <user> <machine name> [local] idle`, the Mac's name left in a process; the login
-    in capitals, `<LOGIN>-helper`, stays;
+  - title `postgres: <login> <machine name> [local] idle`: the row and the detail's
+    `Process` show the title, and the prompt's key and `Process` read `postgres`; a child's
+    `Parent` reads `postgres` too, and `$V db "select pattern from rule where source = 'llm'"`
+    holds `postgres`, not the title. What the redaction does inside a title (the login, a
+    disk's name, a one-letter login) no longer reaches a prompt and rests on unit tests;
   - label `com.<login>.proof`: the key reads `com.<user>.proof` and `Plist`
     `<home>/Library/LaunchAgents/com.<user>.proof.plist`; label `com.<machine name>.proof` reads
     `com.<machine>.proof` in both; `org` and `net` read the same; label `dev.<login>.proof`
@@ -117,8 +119,6 @@ Preconditions:
   - a script `<dir>/com.<login>.tool.sh` run by `/bin/sh` (row `com.<login>.tool.sh`): the key
     and `Process` read `com.<user>.tool.sh`; scripts `io.<login>.sh` and `db.<login>.sh` stay
     whole;
-  - a title holding `'/Volumes/Data' [/Volumes/Other] see /Volumes/Data.`: each disk reads
-    `/Volumes/<volume>` and the quote, bracket and period stay;
   - a plist running `/Users/someone/bin/tool`: `Runs` reads `/Users/<other-user>/bin/tool (1
     argument, not sent)`; through the firmlink, `/System/Volumes/Data/Users/someone/bin/tool`,
     reads `/System/Volumes/Data/Users/<other-user>/bin/tool`; `/Volumes/Spare Disk/Users/someone/
@@ -133,8 +133,6 @@ Preconditions:
     /USERS/<LOGIN>/x and com.<login>.helper.`: it reads `Steps 10-20-30-40 on <private-ip> for
     <user> at <home>/x and com.<login>.helper.` With no row, it is the default text as written.
     Restore or delete the row after the run;
-  - where the login has one or two letters, the title `sshd-session: <login> <login>@ttys003`
-    reads `sshd-session: <user> <user>@ttys003`;
   - where the computer name has a curly apostrophe, edited instructions spelling it with a
     straight one read `<machine>`.
 
