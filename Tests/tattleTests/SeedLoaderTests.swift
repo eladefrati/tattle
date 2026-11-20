@@ -97,6 +97,18 @@ final class SeedLoaderTests: XCTestCase {
         }
     }
 
+    /// A port-wide rule (`*:udp/5353`) explains whoever binds the port, so it cannot say who
+    /// that is: no owner, and no more than medium confidence.
+    func testAPortWideRuleClaimsNothingAboutWhoListens() throws {
+        _ = loader.load(from: repoSeeds)
+        let portWide = try rules.rules().filter { $0.kind == .port && $0.match == .glob && $0.pattern.hasPrefix("*:") }
+        XCTAssertFalse(portWide.isEmpty)
+        for rule in portWide {
+            XCTAssertNil(rule.owner, rule.pattern)
+            XCTAssertNotEqual(rule.confidence, .high, rule.pattern)
+        }
+    }
+
     /// The shipped rules are the app's own files, read at every launch: none goes into the
     /// database, where another process could write one (ADR-0005).
     func testShippedRulesAreNotWrittenToTheDatabase() throws {

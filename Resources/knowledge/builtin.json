@@ -126,13 +126,12 @@
       "kind": "port",
       "match": "glob",
       "pattern": "*:udp/5353",
-      "owner": "Apple",
       "purpose": "Bonjour (multicast DNS): the process advertises or browses services on the local network.",
       "why": "mDNSResponder does this for all of macOS; a browser or app binding it too is discovering devices itself.",
       "care": "It reaches only the local network.",
       "category": "system",
       "risk": "low",
-      "confidence": "high"
+      "confidence": "medium"
     },
     {
       "kind": "port",
