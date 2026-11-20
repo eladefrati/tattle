@@ -248,6 +248,10 @@ Preconditions:
   dns`. The same after a lookup sent straight to the router (run `2026-11-19T221639`), as
   before the change at `526aa39` (run `2026-11-19T220344`). The log has no `kernel filter rejected`, so the kernel took the program that
   passes this Mac's queries; `testKernelAcceptsTheProgram` skips where `/dev/bpf*` is root-only.
+  Proven again the same day once the program copied, of what goes to port 53, only a
+  standard query with one question (run `2026-11-19T232626`): the same lookup through the
+  system's resolver, then `nc` to `140.82.113.4:22`, gave the same row, detail and history,
+  `connect named` its `example.com | http`, and the log no `kernel filter rejected`.
   A reply that answers no query cannot be sent to the Mac on demand: that rests on
   `testADNSReplyThatAnswersNoQueryOfThisMacsIsIgnored` and
   `testAQueryIsHeldOnlyUntilItsReplyOrTenSeconds`. On the test Mac, debug build, CPU time,
@@ -265,9 +269,12 @@ Preconditions:
   capture no longer than 1,448 bytes. A name read from a cut segment
   (`testASegmentCutByTheSnapLengthEndsBuffering`), a handshake in a SYN
   (`testAHelloInTheSYNNamesTheFlow`), an address for a name
-  (`testNamesThatFailValidationLeaveTheFlowUnnamed`) and the wait after a failed read
-  (`testAFailedReadWaitsLongerEachTimeBeforeReopening`) rest on the unit tests: none can be
-  made to happen on demand with the hosts and bytes `connect` may send.
+  (`testNamesThatFailValidationLeaveTheFlowUnnamed`, which also has the reason for a Host
+  header that is an address), the wait after a failed read
+  (`testAFailedReadWaitsLongerEachTimeBeforeReopening`) and the reopening without one when
+  the route has left the interface
+  (`testAFailedReadOnAnInterfaceTheRouteHasLeftReopensAtOnce`) rest on the unit tests: none
+  can be made to happen on demand with the hosts and bytes `connect` may send.
 - DNS replies bounded, proven 2026-11-10 on the development Mac with the broker, dev copy at
   `c8d4028`, run `2026-11-10T163829`: `nc` to example.com shows `Name from the HTTP request`,
   and with no traffic made for it an `ssh` to `140.82.113.3:22` was logged `notHandshake` and
