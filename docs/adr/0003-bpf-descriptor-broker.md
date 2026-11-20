@@ -45,11 +45,13 @@ PRD's "no paid account" non-goal is what rules it out, not a technical limit.
    daemon. On a request over XPC, it opens one BPF device read-only, binds it to the
    requested interface, returns the descriptor in the reply to that request, and keeps no
    descriptor. launchd holds its Mach service in the system domain, where only root can
-   register a name. launchd starts the broker on the first request, and starts it again
-   after it exits a minute after it started or after the last request it accepted, whichever
-   is later: a refused request, from any account, does not keep it running. The broker is written in C and does no parsing. Between
-   requests it holds only the connections it has answered and not yet closed, each until
-   the close described in 2.
+   register a name. launchd starts the broker on the first request, and again on the next
+   request after it exits. It exits a minute after it started or after the last request it
+   accepted, whichever is later. A refused request, from any account, does not extend a run,
+   but one sent after the broker exits starts a new one; launchd starting a job at most once
+   every 10 seconds is the only bound. The broker is written in C and does no parsing.
+   Between requests it holds only the connections it has answered and not yet closed, each
+   until the close described in 2.
 2. The broker answers a request only when three conditions hold for the process that sent
    it. It never judges the sender from a pid. It judges the sender's code from the
    request's own audit token (`SecCodeCreateWithXPCMessage`). The token names the sending
