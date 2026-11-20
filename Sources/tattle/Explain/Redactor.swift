@@ -177,7 +177,7 @@ struct Redactor: Sendable {
             var isPersonal = false
             if rest.count >= 3, same(rest[rest.startIndex], "System"), same(rest[rest.startIndex + 1], "Volumes") {
                 // macOS's own name for the disk, unless the passes over text read another's there.
-                root = "/System/Volumes/" + (leads(to: rest.startIndex + 2).lazy.compactMap(nameRead).first ?? rest[rest.startIndex + 2])
+                root = "/System/Volumes/" + (nameRead(after: leads(to: rest.startIndex + 2)) ?? rest[rest.startIndex + 2])
                 rest = rest.dropFirst(3)
             } else if rest.count >= 2, same(rest[rest.startIndex], "Volumes") {
                 (root, isPersonal) = ("/Volumes/<volume>", true)
@@ -218,7 +218,7 @@ struct Redactor: Sendable {
         if isNamesFolder, let last = rest.last {
             var ways = leads(to: all.count - 1)
             if root.hasSuffix("<home>") { ways.append("<home>/" + (kept + rest.dropLast()).map { $0 + "/" }.joined()) }
-            if let name = ways.lazy.compactMap(nameRead).first, !(name == "<other-user>" && same(last, "Shared")) {
+            if let name = nameRead(after: ways), !(name == "<other-user>" && same(last, "Shared")) {
                 // The root has taken the folder where it read it as a disk's or an account's name.
                 let folder = rest.count > 1 ? (rest.count > 2 ? ["<folders>"] : []) + [rest[rest.endIndex - 2]] : []
                 tail = folder + [name]
@@ -227,11 +227,15 @@ struct Redactor: Sendable {
         return ([root] + kept + tail).joined(separator: "/")
     }
 
-    /// The placeholder the passes over text put for a name that stands straight after `lead`,
-    /// the start of a path up to a slash: an account's or a disk's, where they read one.
-    private func nameRead(after lead: String) -> String? {
-        let read = redactFolders(redactHome(lead) + "x")
-        return ["<volume>", "<other-user>"].first(where: read.hasSuffix)
+    /// The placeholder the passes over text put for a name that stands straight after one of
+    /// `leads`, each the start of a path up to a slash: an account's or a disk's, where they
+    /// read one. For nearly every path the leads are one text once the home is replaced, and
+    /// it is read once: whoever wrote a plist picks how many paths it watches.
+    private func nameRead(after leads: [String]) -> String? {
+        Set(Set(leads).map(redactHome)).lazy.compactMap { lead in
+            let read = redactFolders(lead + "x")
+            return ["<volume>", "<other-user>"].first(where: read.hasSuffix)
+        }.first
     }
 
     func redact(_ text: String, as context: Context) -> String {
