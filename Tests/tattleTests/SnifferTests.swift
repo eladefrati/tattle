@@ -104,6 +104,62 @@ final class SnifferTests: XCTestCase {
                        "the first run stopped before the second reported")
     }
 
+    /// A raw-IP capture whose reads fail, as a device does that went away under it.
+    private final class Failing: CaptureSource, @unchecked Sendable {
+        let dataLinkType = PacketCapture.linkRaw
+        func install(_ filter: CaptureFilter) throws {}
+        func readPackets(_ handle: (Double, [UInt8]) -> Void) throws { throw CaptureError.read(errno: ENXIO) }
+    }
+
+    /// A device that opens and then fails every read was reopened at once, over and over:
+    /// thousands of broker requests a second. Each failure now waits before the next open,
+    /// twice as long as the one before, says it is not capturing, and still ends at a stop.
+    func testAFailedReadWaitsLongerEachTimeBeforeReopening() {
+        let opens = OSAllocatedUnfairLock<[Date]>(initialState: [])
+        let healthy = OSAllocatedUnfairLock(initialState: false)
+        let statuses = OSAllocatedUnfairLock<[Sniffer.Status]>(initialState: [])
+        let sniffer = Sniffer(open: { _ in
+                                  opens.withLock { $0.append(Date()) }
+                                  return healthy.withLock { $0 } ? FakeCapture(linkType: PacketCapture.linkRaw) : Failing()
+                              },
+                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in nil },
+                                                 addresses: { _ in [Self.me] }, resolvers: { [] }, readRetryAfter: 0.1),
+                              onEvents: { _ in }, onStatus: { status in statuses.withLock { $0.append(status) } })
+        defer { sniffer.stop() }
+        sniffer.start()
+        // Opens at 0, then after waits of 0.1, 0.2, 0.4 and 0.8 s: four by 0.7 s, the fifth at 1.5 s.
+        usleep(1_100_000)
+        let times = opens.withLock { $0 }
+        XCTAssertGreaterThanOrEqual(times.count, 3, "it keeps trying")
+        XCTAssertLessThanOrEqual(times.count, 4, "but not at once: \(times.count) opens in 1.1 s")
+        if times.count >= 4 {
+            XCTAssertGreaterThan(times[3].timeIntervalSince(times[2]), 1.5 * times[1].timeIntervalSince(times[0]), "each wait is longer than the first")
+        }
+        let failed = Sniffer.Status.unavailable(.read(errno: ENXIO))
+        XCTAssertEqual(Array(statuses.withLock { $0 }.prefix(4)), [.capturing(interface: "en0"), failed, .capturing(interface: "en0"), failed],
+                       "while it waits it says why it is not capturing")
+
+        healthy.withLock { $0 = true }
+        XCTAssertTrue(eventually { statuses.withLock { $0 }.last == .capturing(interface: "en0") }, "a device that reads again is captured again")
+        let settled = opens.withLock { $0 }.count
+        usleep(300_000)
+        XCTAssertEqual(opens.withLock { $0 }.count, settled, "and is not reopened")
+
+        // A stop during a wait ends the run without waiting it out.
+        healthy.withLock { $0 = false }
+        let waiting = Sniffer(open: { _ in Failing() },
+                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in nil },
+                                                 addresses: { _ in [Self.me] }, resolvers: { [] }, readRetryAfter: 20),
+                              onEvents: { _ in }, onStatus: { status in statuses.withLock { $0.append(status) } })
+        statuses.withLock { $0 = [] }
+        sniffer.stop()
+        XCTAssertTrue(eventually { statuses.withLock { $0 }.last == .stopped })
+        waiting.start()
+        XCTAssertTrue(eventually { statuses.withLock { $0 }.last == failed }, "waiting 20 s to reopen")
+        waiting.stop()
+        XCTAssertTrue(eventually(within: 2) { statuses.withLock { $0 }.last == .stopped }, "stopped within the wait")
+    }
+
     /// A raw-IP capture that delivers its packets on the first read, then nothing.
     private final class OnePass: CaptureSource, @unchecked Sendable {
         let dataLinkType = PacketCapture.linkRaw

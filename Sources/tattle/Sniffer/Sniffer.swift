@@ -3,7 +3,8 @@ import os
 
 /// Reads packets from the default route's interface on its own thread and reports flow
 /// events. Follows the interface when the default route moves; retries when the device
-/// cannot be opened, which is the state while the broker (ADR-0003) is not installed.
+/// cannot be opened, which is the state while the broker (ADR-0003) is not installed, and
+/// when a read fails, waiting longer before each reopening while reads keep failing.
 final class Sniffer: @unchecked Sendable {
     enum Status: Equatable, Sendable {
         case stopped
@@ -23,6 +24,9 @@ final class Sniffer: @unchecked Sendable {
         var addresses: @Sendable (String) -> Set<IPAddress> = { localAddresses(of: $0) }
         var resolvers: @Sendable () -> Set<IPAddress> = { systemResolvers() }
         var interfaceCheckEvery: TimeInterval = 5
+        /// The wait before reopening after the first failed read; it doubles at each one
+        /// that follows, up to `retryAfter`.
+        var readRetryAfter: TimeInterval = 1
     }
 
     private let open: Opener
@@ -89,8 +93,18 @@ final class Sniffer: @unchecked Sendable {
         run.stopping.withLock { $0 = true }
     }
 
+    /// Why a capture's reading ended.
+    private enum CaptureEnd {
+        case stopped
+        /// The default route moved to another interface.
+        case moved
+        case readFailed(CaptureError)
+    }
+
     private func run(shouldStop: () -> Bool) {
         var lastFailure: CaptureError?
+        /// Captures in a row that ended in a failed read.
+        var readFailures = 0
         while !shouldStop() {
             guard let interface = host.primaryInterface() else {
                 report(.unavailable(.noInterface), previous: &lastFailure)
@@ -120,7 +134,24 @@ final class Sniffer: @unchecked Sendable {
             // Notice, not info: the unified log keeps notices, so a later comparison can
             // tell when capture was on.
             Log.sniffer.notice("capturing on \(interface, privacy: .public), link type \(capture.dataLinkType), \(capture.isFromBroker ? "through the broker" : "from the device", privacy: .public)")
-            captureLoop(capture, interface: interface, direction: direction, shouldStop: shouldStop)
+            let opened = Date()
+            switch captureLoop(capture, interface: interface, direction: direction, shouldStop: shouldStop) {
+            case .stopped:
+                break
+            case .moved:
+                readFailures = 0
+            case .readFailed(let error):
+                // A device that opens and then fails its reads would otherwise be reopened
+                // as fast as the broker answers. One that read for a while first is a new
+                // trouble, and starts the waits over.
+                if Date().timeIntervalSince(opened) >= Self.retryAfter { readFailures = 0 }
+                readFailures += 1
+                guard !shouldStop() else { break }
+                let delay = min(Self.retryAfter, host.readRetryAfter * pow(2, Double(readFailures - 1)))
+                report(.unavailable(error), previous: &lastFailure)
+                Log.sniffer.notice("reopening the capture in \(delay, format: .fixed(precision: 1)) s, after \(readFailures) in a row ended in a failed read")
+                wait(delay, shouldStop: shouldStop)
+            }
         }
         onStatus(.stopped)
     }
@@ -160,7 +191,7 @@ final class Sniffer: @unchecked Sendable {
     }
 
     /// Reads until the interface changes, the device fails, or stop is called.
-    private func captureLoop(_ capture: any CaptureSource, interface: String, direction installed: CaptureFilter.Direction, shouldStop: () -> Bool) {
+    private func captureLoop(_ capture: any CaptureSource, interface: String, direction installed: CaptureFilter.Direction, shouldStop: () -> Bool) -> CaptureEnd {
         var installed = installed
         var namer = FlowNamer(localAddresses: host.addresses(interface), resolvers: host.resolvers(), hardwareAddress: installed.hardwareAddress)
         // Every way out drops the namer, and with it the flows whose handshake was not read.
@@ -198,8 +229,8 @@ final class Sniffer: @unchecked Sendable {
                     events += namer.observe(packet, at: timestamp)
                 }
             } catch {
-                Log.sniffer.error("packet read failed, reopening: \(String(describing: error), privacy: .public)")
-                return
+                Log.sniffer.error("packet read failed: \(String(describing: error), privacy: .public)")
+                return .readFailed(error as? CaptureError ?? .read(errno: EIO))
             }
             let now = Date()
             if now.timeIntervalSince(lastExpire) >= Self.expireEvery {
@@ -216,7 +247,7 @@ final class Sniffer: @unchecked Sendable {
                 lastInterfaceCheck = now
                 if let current = host.primaryInterface(), current != interface {
                     Log.sniffer.info("default route moved to \(current, privacy: .public); reopening")
-                    return
+                    return .moved
                 }
                 follow(capture, interface: interface, installed: &installed, namer: &namer)
                 // An address the interface has gained is this Mac's from here on; a packet
@@ -227,6 +258,7 @@ final class Sniffer: @unchecked Sendable {
                 namer.updateResolvers(host.resolvers())
             }
         }
+        return .stopped
     }
 
     /// Brings the kernel filter and the namer to the interface's addresses as they are now. A
@@ -244,7 +276,7 @@ final class Sniffer: @unchecked Sendable {
     private func wait(_ seconds: TimeInterval, shouldStop: () -> Bool) {
         let deadline = Date().addingTimeInterval(seconds)
         while !shouldStop(), Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.5)
+            Thread.sleep(forTimeInterval: min(0.5, max(0, deadline.timeIntervalSinceNow)))
         }
     }
 }
