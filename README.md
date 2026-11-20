@@ -33,8 +33,8 @@ line for CPU, memory and network, and four tabs:
 
 - **Network**: every open connection, grouped by app. A connection is named from the
   connection itself (the TLS server name, the QUIC handshake, the HTTP Host header), with
-  DNS replies as a fallback marked "from DNS". The name is the one the program asked for,
-  not proof of who answers at the address. Connections to an address this Mac has not
+  DNS replies as a fallback marked "from DNS". A name from the connection is the one the
+  program asked for, not proof of who answers at the address. Connections to an address this Mac has not
   reached before are listed first, under **First contact**.
 - **Processes**: what is running, each with its code signer (Apple, a developer's Team ID
   and organization, or unsigned) and the app a helper belongs to.
