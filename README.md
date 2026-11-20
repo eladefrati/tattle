@@ -220,11 +220,11 @@ command you configured.
 
 Before sending, Tattle replaces these in the item and its facts with placeholders: your
 home path, your username, private and local IP addresses, the Mac's names, Tailscale device
-names, other accounts' folders, disk names, and a public address a port is bound to. The
-default instructions go out as written. Instructions you edit lose your home path in any
-case, your username, the Mac's names with either apostrophe, and private or local
-addresses unless spelled with hyphens; a dotted name such as `com.username.helper`, other
-accounts' folders, disk names and Tailscale names stay in them.
+names, other accounts' folders, disk names, email addresses, and a public address a port is
+bound to. The default instructions go out as written. Instructions you edit lose your home
+path in any case, your username, the Mac's names with either apostrophe, and private or
+local addresses unless spelled with hyphens; a dotted name such as `com.username.helper`,
+other accounts' folders, disk names, Tailscale names and email addresses stay in them.
 
 Some of an item is not sent at all. A process that gave itself a title, such as
 `postgres: appuser payroll_prod db01.corp.example.com(54321) idle`, is sent as the program
@@ -256,6 +256,9 @@ A name is replaced only where Tattle can tell it from an ordinary word, so some 
   `dev.azure.com` stays on a Mac called `dev`, and `dev.lan` stays unless `lan` is a search
   domain. In a startup item they are replaced only as the author's part, and in a process or
   a port they stay. Straight and curly apostrophes count as one; other spellings do not match.
+- An email address is one whose domain ends in letters and does not start with a number, so
+  `python@3.12` and `user@ttys003` stay, and so does an address at a bare name
+  (`name@localhost`).
 - A path loses its folders only where Tattle holds it whole: a program's, a plist's, a file a
   startup item watches. A path inside other text, such as a reason macOS gave, keeps them.
   There, a disk's name with spaces or punctuation is replaced whole only while the disk is

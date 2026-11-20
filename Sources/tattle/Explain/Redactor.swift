@@ -3,7 +3,8 @@ import SystemConfiguration
 
 /// Replaces what would identify this Mac or its user before a prompt leaves the machine:
 /// the home path, the username, private and local IP addresses, the machine's names,
-/// Tailscale names, which identify the account, other accounts' folders and disk names.
+/// Tailscale names, which identify the account, other accounts' folders, disk names and
+/// email addresses.
 struct Redactor: Sendable {
     /// What a text is. An item's key and facts share one, so the same rules apply to both.
     enum Context {
@@ -198,6 +199,8 @@ struct Redactor: Sendable {
         }
         // Before any name: a disk's or a folder's name can hold the login.
         if captured { out = redactFolders(out) }
+        // Before the login: an address that starts with it would keep its domain.
+        if captured { out = out.replacingOccurrences(of: Self.email, with: "<email>", options: .regularExpression) }
         out = redactMachineNames(out, in: context)
         // After the machine's names, so this Mac's own MagicDNS name reads as the machine. A
         // peer's is device.tailnet.ts.net, and the tailnet's name identifies the account. A
@@ -210,6 +213,11 @@ struct Redactor: Sendable {
         out = redactUsername(out, in: context)
         return Self.redactAddresses(out, spelledWithHyphens: captured)
     }
+
+    /// An email address, whoever's: a cloud drive names its folder with one. The domain ends in
+    /// letters and does not start with a number, so a package's version ("python@3.12",
+    /// "pkg@1.2.3") and a login at a terminal ("user@ttys003") are not one.
+    private static let email = "(?<![\\w.%+-])[\\w.%+-]+@(?!\\d+\\.)(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}(?![\\w-])"
 
     /// Where a text can say it is this Mac. A host is, only when all of it is one of the Mac's
     /// names: "dev.azure.com" is not the Mac called dev. A process's name is its author's, so

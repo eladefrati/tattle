@@ -32,7 +32,8 @@ final class RedactorTests: XCTestCase {
         XCTAssertEqual(short.redact("postgres: u clientdb [local] idle:tcp/5432", as: .program), "postgres: <user> clientdb [local] idle:tcp/5432")
         XCTAssertEqual(short.redact("sshd: U [priv]", as: .program), "sshd: U [priv]", "only as written")
         XCTAssertEqual(short.redact("sshd: u", as: .program), "sshd: <user>")
-        XCTAssertEqual(short.redact("mail: bu@x.example, code-u@x.example, a.u@x.example", as: .program), "mail: bu@x.example, code-u@x.example, a.u@x.example")
+        XCTAssertEqual(short.redact("mail: bu@ttys1, code-u@ttys1, a.u@ttys1", as: .program), "mail: bu@ttys1, code-u@ttys1, a.u@ttys1", "inside a longer name it is not the login")
+        XCTAssertEqual(short.redact("mail: u@x.example", as: .program), "mail: <email>", "an address goes whole")
         XCTAssertEqual(short.redact("postgres: clientdb u [local]", as: .program), "postgres: clientdb u [local]", "second in the title is not the login's place")
         let none = Redactor(home: "", username: "", machineNames: [])
         XCTAssertEqual(none.redact("sshd: x@y", as: .program), "sshd: x@y", "no login, nothing to match")
@@ -175,6 +176,38 @@ final class RedactorTests: XCTestCase {
                        "<home>/Library/LaunchAgents/<folders>/sync.plist")
         XCTAssertEqual(redactor.redact(key: "com.username.sync", of: .launchItem), "com.<user>.sync")
         XCTAssertEqual(redactor.redact(key: "/Users/username/dev/acme/tool", of: .process), "<home>/dev/acme/tool", "a process's key is its name, read as text")
+    }
+
+    /// An email address names a person wherever it stands: a cloud drive's folder, a title, a
+    /// label. A package's version and a login at a terminal are not one. The user's own
+    /// sentences keep what they wrote.
+    func testAnEmailAddressIsReplacedInCapturedText() {
+        let rows: [(String, String)] = [
+            ("GoogleDrive-name@example.com", "<email>"),
+            ("sync for first.last+work@mail.example.co.uk (pid 4)", "sync for <email> (pid 4)"),
+            ("report-name@example.com.pdf", "<email>"),
+            ("write to name@example.com.", "write to <email>."),
+            // Before the login goes, or its domain would stay.
+            ("username@example.com", "<email>"),
+            ("git@github.com:acme/tool", "<email>:acme/tool"),
+            ("a@b.example,c@d.example", "<email>,<email>"),
+            ("python@3.12", "python@3.12"),
+            ("postgresql@16", "postgresql@16"),
+            ("/opt/homebrew/Cellar/postgresql@16/16.4/bin/postgres", "/opt/homebrew/Cellar/postgresql@16/16.4/bin/postgres"),
+            ("homebrew.mxcl.postgresql@16", "homebrew.mxcl.postgresql@16"),
+            ("pkg@1.2.3", "pkg@1.2.3"),
+            ("npm exec chrome-devtools-mcp@1.11.0", "npm exec chrome-devtools-mcp@1.11.0"),
+            ("npm exec @playwright/mcp@latest", "npm exec @playwright/mcp@latest"),
+            ("sshd-session: other@ttys003", "sshd-session: other@ttys003"),
+            ("name@localhost", "name@localhost"),
+            ("@example.com and name@", "@example.com and name@"),
+        ]
+        for (input, expected) in rows {
+            for context in [Redactor.Context.program, .launchItem, .host] {
+                XCTAssertEqual(redactor.redact(input, as: context), expected, "\(context): \(input)")
+            }
+        }
+        XCTAssertEqual(redactor.redact("Mail from name@example.com is mine.", as: .instructions), "Mail from name@example.com is mine.")
     }
 
     func testMachineNames() {
@@ -507,7 +540,8 @@ final class RedactionReviewTableTests: XCTestCase {
             (mail, .host, "mail-attachment.example", "mail-attachment.example"),
             (mail, .host, "mail.google.com", "mail.google.com"),
             (username, .host, "username_db.example.com", "username_db.example.com"),
-            (username, .host, "username@x.example", "<user>@x.example"),
+            (username, .host, "username@x.example", "<email>"),
+            (username, .host, "username@x", "<user>@x"),
             (username, .host, "username.", "<user>."),
             (username, .host, "username/", "<user>/"),
 
@@ -1173,7 +1207,7 @@ final class ExplainerTests: XCTestCase {
         let sent = try XCTUnwrap(provider.seen.prompts.first)
         XCTAssertTrue(sent.contains(#""item":{"key":"mail.google.com","kind":"host"}"#), sent)
         XCTAssertTrue(sent.contains(#"{"name":"Destination","value":"mail.google.com"}"#), sent)
-        XCTAssertTrue(sent.contains(#"{"name":"Also","value":"smtp.mail.example, relay.mail, you (<user>), <user>@example.com, run by <user>."}"#), sent)
+        XCTAssertTrue(sent.contains(#"{"name":"Also","value":"smtp.mail.example, relay.mail, you (<user>), <email>, run by <user>."}"#), sent)
     }
 
     /// The sniffer never names a local-network destination, so an unnamed connection's key is
