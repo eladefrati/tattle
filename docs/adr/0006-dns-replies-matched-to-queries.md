@@ -37,11 +37,15 @@ wire name exists, and marked "from DNS".
 
 ## Consequences
 
-- A reply forged blind names nothing, and is dropped on its transaction id, before it is
-  parsed. A host that sees the query, on a shared network or as the resolver itself, and
-  answers first is not stopped: that is the reply the Mac's own resolver takes too, so the
-  name shown is the one the Mac was told. On a link whose frames carry no hardware address
-  (a tunnel) a query is known as this Mac's by its IP source alone.
+- A reply alone names nothing: one that answers no query is dropped on its transaction id,
+  before it is parsed. A forger now has to be believed about a query too.
+- A query is taken for this Mac's by its frame's hardware source, which must be the
+  interface's own, and on a link whose frames carry none (a tunnel) by its IP source. A
+  host that can send this Mac a frame under those, as one on the same link can, forges the
+  query as well as the reply, having seen none of this Mac's traffic, and is not stopped.
+- A host that sees a real query, on a shared network or as the resolver itself, and
+  answers first is not stopped either: that is the reply the Mac's own resolver takes too,
+  so the name shown is the one the Mac was told.
 - A reply to a query sent before the capture began names nothing, and a lookup answered
   from the system's cache sends no query, as it sent none before.
 - What Tattle reads off the network grows by this Mac's DNS queries; the
@@ -50,4 +54,4 @@ wire name exists, and marked "from DNS".
 ## Alternatives
 
 - Taking every reply from a resolver's address to this Mac's, without reading the queries,
-  as first built. Reads less, and lets any host on the link name any address. Rejected.
+  as first built. Reads less, and lets one forged reply name any address. Rejected.
