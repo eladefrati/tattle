@@ -1,3 +1,5 @@
+import os
+import SystemConfiguration
 import XCTest
 @testable import tattle
 
@@ -235,7 +237,8 @@ final class CaptureFilterTests: XCTestCase {
     /// one, and this Mac addresses no frame to itself and sends to a group address nothing
     /// the namer reads. So a frame addressed that way is not read as sent: it holds no query
     /// for a forged reply to answer, renames no open connection and has no Initial decrypted
-    /// (ADR-0006). The same frames to another host's address, as this Mac sends them, are read.
+    /// (ADR-0006). The same frames to another host's address, as this Mac sends them, are read,
+    /// and so are frames to a group address on a network whose gateway answers at one.
     func testAFrameUnderThisMacsHardwareAddressToItselfOrAGroupAddressIsNotReadAsSent() throws {
         let filter = try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkEthernet, direction: .hardwareAddress(mac)))
         func record(_ hello: [UInt8]) -> [UInt8] { [0x16, 0x03, 0x01, UInt8(hello.count >> 8), UInt8(hello.count & 0xff)] + hello }
@@ -305,6 +308,27 @@ final class CaptureFilterTests: XCTestCase {
             XCTAssertEqual(try observe(sent[1].1, by: &namer), [FlowEvent(key: tcpKey, kind: .opened)], "IPv\(family)")
             XCTAssertEqual(try observe(sent[2].1, by: &namer), [FlowEvent(key: tcpKey, kind: .named("forged.example", .sni))], "IPv\(family)")
             XCTAssertEqual(try observe(sent[3].1, by: &namer), [FlowEvent(key: udpKey, kind: .opened), FlowEvent(key: udpKey, kind: .named("forged.example", .quic))], "IPv\(family)")
+
+            // Where the gateway answers at a group address, everything this Mac sends past
+            // the link is addressed to one, and is read. A frame to this Mac's own address
+            // still is not.
+            let cluster: [UInt8] = [0x01, 0x00, 0x5e, 0x7f, 0x00, 0x01]
+            let lenient = try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkEthernet, direction: .hardwareAddress(mac, gatewayAtGroupAddress: true)))
+            var routed = FlowNamer(localAddresses: [IPAddress(bytes: me)], resolvers: [IPAddress(bytes: resolver)], hardwareAddress: mac, gatewayAtGroupAddress: true)
+            let viaCluster = frames(to: cluster)
+            for (kind, frame) in viaCluster { XCTAssertEqual(Interpreter.run(lenient, on: frame), CaptureFilter.snapLength, "IPv\(family): with a gateway at a group address the filter passes \(kind) addressed to it") }
+            XCTAssertEqual(try observe(viaCluster[0].1, by: &routed), [])
+            XCTAssertEqual(routed.queryCount, 1, "IPv\(family): the query sent through the gateway is held")
+            _ = try observe(answer, by: &routed)
+            XCTAssertEqual(routed.dnsCount, 1, "IPv\(family): and its reply remembered")
+            XCTAssertEqual(try observe(viaCluster[1].1, by: &routed), [FlowEvent(key: tcpKey, kind: .opened)], "IPv\(family)")
+            XCTAssertEqual(try observe(viaCluster[2].1, by: &routed), [FlowEvent(key: tcpKey, kind: .named("forged.example", .sni))], "IPv\(family)")
+            XCTAssertEqual(try observe(viaCluster[3].1, by: &routed), [FlowEvent(key: udpKey, kind: .opened), FlowEvent(key: udpKey, kind: .named("forged.example", .quic))], "IPv\(family)")
+            for (kind, frame) in frames(to: mac) {
+                XCTAssertEqual(Interpreter.run(lenient, on: frame), 0, "IPv\(family): the filter still drops \(kind) addressed to this Mac's own address")
+                XCTAssertEqual(try observe(frame, by: &routed), [], "IPv\(family): and the namer still does not read \(kind) addressed to it")
+            }
+            for (kind, frame) in sent { XCTAssertEqual(Interpreter.run(lenient, on: frame), CaptureFilter.snapLength, "IPv\(family): \(kind) to another host's address passes as before") }
 
             // An address that differs from this Mac's in its last byte alone is another host's.
             var neighbour = mac
@@ -390,6 +414,59 @@ final class CaptureFilterTests: XCTestCase {
         XCTAssertEqual(PacketCapture.primaryInterface(store: store(nil, "en1")), "en1", "IPv6-only")
         XCTAssertEqual(PacketCapture.primaryInterface(store: store("en0", "utun3")), "en0", "IPv4 first, as before")
         XCTAssertNil(PacketCapture.primaryInterface(store: store(nil, nil)))
+    }
+
+    /// The gateways whose hardware addresses are read are the routers the configuration store
+    /// names for the interface, each family's only when its default route is on it, and only
+    /// those the neighbour table has resolved.
+    func testTheGatewaysAreTheRoutersOfTheFamiliesRoutedOverTheInterface() {
+        let unicast: [UInt8] = [0x02, 0x00, 0x00, 0x00, 0x00, 0x09], group: [UInt8] = [0x01, 0x00, 0x5e, 0x7f, 0x00, 0x01]
+        func store(_ v4: [String: Any]?, _ v6: [String: Any]?) -> (String) -> [String: Any]? {
+            { key in
+                switch key {
+                case "State:/Network/Global/IPv4": v4
+                case "State:/Network/Global/IPv6": v6
+                default: nil
+                }
+            }
+        }
+        let asked = OSAllocatedUnfairLock<[String]>(initialState: [])
+        func gateways(_ v4: [String: Any]?, _ v6: [String: Any]?, resolved: [String: [UInt8]] = ["192.168.1.1": unicast, "fe80::1": group]) -> [[UInt8]] {
+            PacketCapture.gatewayHardwareAddresses(of: "en0", store: store(v4, v6)) { address, interface in
+                asked.withLock { $0.append("\(address.text) on \(interface)") }
+                return resolved[address.text]
+            }
+        }
+        let v4: [String: Any] = ["PrimaryInterface": "en0", "Router": "192.168.1.1"]
+        XCTAssertEqual(gateways(v4, ["PrimaryInterface": "en0", "Router": "fe80::1%en0"]), [unicast, group], "both families, the zone dropped from a link-local router")
+        XCTAssertEqual(asked.withLock { $0 }, ["192.168.1.1 on en0", "fe80::1 on en0"])
+        XCTAssertEqual(gateways(v4, ["PrimaryInterface": "utun3", "Router": "fe80::1"]), [unicast], "IPv6 is routed over another interface")
+        XCTAssertEqual(gateways(["PrimaryInterface": "en1", "Router": "192.168.1.1"], nil), [], "the default route is on another interface")
+        XCTAssertEqual(gateways(v4, nil, resolved: [:]), [], "the router's entry is not resolved")
+        XCTAssertEqual(gateways(["PrimaryInterface": "en0"], nil), [], "a route with no router, as on a point-to-point link")
+        XCTAssertEqual(gateways(nil, nil), [])
+    }
+
+    /// The neighbour table is read with the layout `arp` reads it with: on this machine, the
+    /// IPv4 gateway's hardware address is the one `arp -n` prints.
+    func testTheGatewaysHardwareAddressIsTheOneArpReports() throws {
+        let global = SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
+        let interface = try XCTUnwrap(global?["PrimaryInterface"] as? String, "no IPv4 default route")
+        guard let router = global?["Router"] as? String else { throw XCTSkip("the default route has no router") }
+        let arp = Process(), output = Pipe()
+        arp.executableURL = URL(fileURLWithPath: "/usr/sbin/arp")
+        arp.arguments = ["-n", router]
+        arp.standardOutput = output
+        arp.standardError = Pipe()
+        try arp.run()
+        let printed = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        arp.waitUntilExit()
+        // "? (192.168.1.1) at 2:0:0:0:0:9 on en0 ifscope [ethernet]", without leading zeros.
+        let words = printed.split(separator: " ")
+        guard let at = words.firstIndex(of: "at"), at + 1 < words.count else { throw XCTSkip("arp printed no entry for \(router)") }
+        let reported = words[at + 1].split(separator: ":").compactMap { UInt8($0, radix: 16) }
+        guard reported.count == 6 else { throw XCTSkip("the gateway's entry is not resolved: \(words[at + 1])") }
+        XCTAssertEqual(PacketCapture.gatewayHardwareAddresses(of: interface).first, reported)
     }
 
     func testKernelAcceptsTheProgram() throws {

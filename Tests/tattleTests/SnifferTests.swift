@@ -59,7 +59,7 @@ final class SnifferTests: XCTestCase {
         let mac = OSAllocatedUnfairLock(initialState: [UInt8]([0x2a, 0, 0, 0, 0, 1]))
         let ethernet = FakeCapture(linkType: PacketCapture.linkEthernet)
         let wifi = Sniffer(open: { _ in ethernet },
-                           host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in mac.withLock { $0 } },
+                           host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in mac.withLock { $0 } }, gatewayHardwareAddresses: { _ in [] },
                                               addresses: { _ in [] }, interfaceCheckEvery: 0.05),
                            onEvents: { _ in }, onStatus: { _ in })
         wifi.start()
@@ -290,7 +290,7 @@ final class SnifferTests: XCTestCase {
         let capture = Fed(linkType: PacketCapture.linkEthernet)
         let events = OSAllocatedUnfairLock<[FlowEvent]>(initialState: [])
         let sniffer = Sniffer(open: { _ in capture },
-                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in mac },
+                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in mac }, gatewayHardwareAddresses: { _ in [] },
                                                  addresses: { $0 == "en0" ? own : elsewhere }, resolvers: { [resolver] }),
                               onEvents: { new in events.withLock { $0 += new } }, onStatus: { _ in })
         defer { sniffer.stop() }
@@ -342,7 +342,7 @@ final class SnifferTests: XCTestCase {
         let capture = Fed(linkType: PacketCapture.linkEthernet)
         let events = OSAllocatedUnfairLock<[FlowEvent]>(initialState: [])
         let sniffer = Sniffer(open: { _ in capture },
-                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in Self.first },
+                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in Self.first }, gatewayHardwareAddresses: { _ in [] },
                                                  addresses: { _ in
                                                      let now = own.withLock { $0 }
                                                      if !now.contains(Self.me) { readingsWithout.withLock { $0 += 1 } }
@@ -436,8 +436,8 @@ final class SnifferTests: XCTestCase {
     private static let remote = IPAddress(bytes: [203, 0, 113, 7])
 
     /// An Ethernet frame from `source` carrying this Mac's SYN to `remote`.
-    private static func syn(from source: [UInt8], port: UInt16) -> [UInt8] {
-        [2, 0, 0, 0, 0, 9] + source + [0x08, 0x00, 0x45, 0, 0, 40, 0, 0, 0, 0, 64, 6, 0, 0] + me.bytes + remote.bytes
+    private static func syn(from source: [UInt8], to destination: [UInt8] = [2, 0, 0, 0, 0, 9], port: UInt16) -> [UInt8] {
+        destination + source + [0x08, 0x00, 0x45, 0, 0, 40, 0, 0, 0, 0, 64, 6, 0, 0] + me.bytes + remote.bytes
             + [UInt8(port >> 8), UInt8(port & 0xff), 0x01, 0xbb, 0, 0, 0, 1, 0, 0, 0, 0, 0x50, 0x02, 0xff, 0xff, 0, 0, 0, 0]
     }
 
@@ -450,7 +450,7 @@ final class SnifferTests: XCTestCase {
     private func ethernetSniffer(_ capture: Fed, mac: OSAllocatedUnfairLock<[UInt8]>, interfaceCheckEvery: TimeInterval) -> (Sniffer, OSAllocatedUnfairLock<[FlowEvent]>) {
         let events = OSAllocatedUnfairLock<[FlowEvent]>(initialState: [])
         let sniffer = Sniffer(open: { _ in capture },
-                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in mac.withLock { $0 } },
+                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in mac.withLock { $0 } }, gatewayHardwareAddresses: { _ in [] },
                                                  addresses: { _ in [Self.me] }, resolvers: { [] }, interfaceCheckEvery: interfaceCheckEvery),
                               onEvents: { new in events.withLock { $0 += new.filter { $0.kind == .opened } } }, onStatus: { _ in })
         return (sniffer, events)
@@ -485,6 +485,57 @@ final class SnifferTests: XCTestCase {
         capture.feed([Self.syn(from: Self.first, port: 50003), Self.syn(from: Self.rotated, port: 50004)])
         XCTAssertTrue(eventually { events.withLock { $0 }.contains(Self.opened(50004)) }, "the namer follows the interface's new address")
         XCTAssertFalse(events.withLock { $0 }.contains(Self.opened(50003)), "and a frame from the old one opens nothing")
+    }
+
+    /// On a network whose gateway answers at a multicast hardware address, every frame this
+    /// Mac sends past the link is addressed to one. The gateway's address is read when the
+    /// capture opens and at each check of the interface; while it is a group address, frames
+    /// to group addresses are read as sent, by the namer from its first packet and by the
+    /// kernel filter, and when it is another host's address, or cannot be read, they are not.
+    func testWhereTheGatewayAnswersAtAGroupAddressFramesToOneOpenFlows() {
+        let cluster: [UInt8] = [0x01, 0x00, 0x5e, 0x7f, 0x00, 0x01], router: [UInt8] = [2, 0, 0, 0, 0, 9]
+        let gateways = OSAllocatedUnfairLock<[[UInt8]]>(initialState: [cluster])
+        func host() -> Sniffer.Host {
+            Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in Self.first }, gatewayHardwareAddresses: { _ in gateways.withLock { $0 } },
+                         addresses: { _ in [Self.me] }, resolvers: { [] }, interfaceCheckEvery: 0.05)
+        }
+        let capture = Fed(linkType: PacketCapture.linkEthernet)
+        let events = OSAllocatedUnfairLock<[FlowEvent]>(initialState: [])
+        let sniffer = Sniffer(open: { _ in capture }, host: host(),
+                              onEvents: { new in events.withLock { $0 += new.filter { $0.kind == .opened } } }, onStatus: { _ in })
+        defer { sniffer.stop() }
+        sniffer.start()
+        capture.feed([Self.syn(from: Self.first, to: cluster, port: 50001)])
+        XCTAssertTrue(eventually { events.withLock { $0 } == [Self.opened(50001)] }, "read as sent from the first packet")
+
+        /// Feeds a frame to the group address and then one to a host's, some checks of the
+        /// interface after the reading changed: frames are read in order, so once the second
+        /// has opened its flow the first has been read.
+        func opensAfterTheNextChecks(_ group: UInt16, _ unicast: UInt16) -> [FlowEvent] {
+            usleep(300_000)
+            capture.feed([Self.syn(from: Self.first, to: cluster, port: group), Self.syn(from: Self.first, to: router, port: unicast)])
+            XCTAssertTrue(eventually { events.withLock { $0 }.contains(Self.opened(unicast)) })
+            return events.withLock { $0 }.filter { $0 == Self.opened(group) || $0 == Self.opened(unicast) }
+        }
+        gateways.withLock { $0 = [router] }
+        XCTAssertEqual(opensAfterTheNextChecks(50002, 50003), [Self.opened(50003)], "the gateway now answers at a host's address: a frame to a group address is not this Mac's")
+        gateways.withLock { $0 = [router, cluster] }
+        XCTAssertEqual(opensAfterTheNextChecks(50004, 50005), [Self.opened(50004), Self.opened(50005)], "one of two gateways at a group address is enough")
+        gateways.withLock { $0 = [] }
+        XCTAssertEqual(opensAfterTheNextChecks(50006, 50007), [Self.opened(50007)], "no gateway address to read: the test stays")
+
+        // The kernel filter is built from the same reading, and rebuilt when it changes.
+        gateways.withLock { $0 = [cluster] }
+        let filtered = FakeCapture(linkType: PacketCapture.linkEthernet)
+        let second = Sniffer(open: { _ in filtered }, host: host(), onEvents: { _ in }, onStatus: { _ in })
+        defer { second.stop() }
+        second.start()
+        XCTAssertTrue(eventually { filtered.installed.count == 1 })
+        XCTAssertEqual(filtered.installed.last, CaptureFilter.program(linkType: PacketCapture.linkEthernet, direction: .hardwareAddress(Self.first, gatewayAtGroupAddress: true)))
+        gateways.withLock { $0 = [] }
+        XCTAssertTrue(eventually { filtered.installed.count == 2 }, "rebuilt when the gateway's address can no longer be read")
+        XCTAssertEqual(filtered.installed.last, CaptureFilter.program(linkType: PacketCapture.linkEthernet, direction: .hardwareAddress(Self.first)))
+        XCTAssertNotEqual(filtered.installed.first, filtered.installed.last, "and the two programs differ")
     }
 
     /// The interface is checked every few seconds, and its hardware address can change in
@@ -526,7 +577,7 @@ final class SnifferTests: XCTestCase {
         let statuses = OSAllocatedUnfairLock<[Sniffer.Status]>(initialState: [])
         let slow = SlowOpen()
         let sniffer = Sniffer(open: { _ in try slow.open() },
-                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in [2, 0, 0, 0, 0, 1] }, addresses: { _ in [] }),
+                              host: Sniffer.Host(primaryInterface: { "en0" }, hardwareAddress: { _ in [2, 0, 0, 0, 0, 1] }, gatewayHardwareAddresses: { _ in [] }, addresses: { _ in [] }),
                               onEvents: { _ in }, onStatus: { status in statuses.withLock { $0.append(status) } })
         defer { slow.release(); sniffer.stop() }
         sniffer.start()

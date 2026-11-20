@@ -21,6 +21,8 @@ final class Sniffer: @unchecked Sendable {
     struct Host: Sendable {
         var primaryInterface: @Sendable () -> String? = { PacketCapture.primaryInterface() }
         var hardwareAddress: @Sendable (String) -> [UInt8]? = { PacketCapture.hardwareAddress(of: $0) }
+        /// The hardware addresses one interface's gateways answer at, those that can be read.
+        var gatewayHardwareAddresses: @Sendable (String) -> [[UInt8]] = { PacketCapture.gatewayHardwareAddresses(of: $0) }
         /// One interface's addresses.
         var addresses: @Sendable (String) -> Set<IPAddress> = { localAddresses(of: $0) }
         var resolvers: @Sendable () -> Set<IPAddress> = { systemResolvers() }
@@ -32,6 +34,8 @@ final class Sniffer: @unchecked Sendable {
 
     private let open: Opener
     private let host: Host
+    /// The interfaces whose gateway was found at a group hardware address, each logged once.
+    private let groupGatewaysLogged = OSAllocatedUnfairLock<Set<String>>(initialState: [])
     private let onEvents: @Sendable ([FlowEvent]) -> Void
     private let onStatus: @Sendable (Status) -> Void
     /// The current run's stop flag and the signal that it has ended. Each run has its own,
@@ -129,7 +133,7 @@ final class Sniffer: @unchecked Sendable {
             // Stopped while the broker was answering: the descriptor is dropped unused.
             guard !shouldStop() else { break }
             lastFailure = nil
-            let direction = direction(for: capture, interface: interface)
+            let direction = direction(for: capture, interface: interface, gatewayAtGroupAddress: gatewayAtGroupAddress(capture, interface: interface))
             installFilter(on: capture, direction: direction, interface: interface)
             onStatus(.capturing(interface: interface))
             // Notice, not info: the unified log keeps notices, so a later comparison can
@@ -183,10 +187,24 @@ final class Sniffer: @unchecked Sendable {
         previous = error
     }
 
+    /// Whether a gateway of the interface answers at a broadcast or multicast hardware address,
+    /// so that what this Mac sends past the link is addressed to one (ADR-0006). Read from the
+    /// system's neighbour table when a capture opens and at each check of the interface, never
+    /// for a packet. False while no gateway's address can be read, and on a link whose frames
+    /// carry no hardware address.
+    private func gatewayAtGroupAddress(_ capture: any CaptureSource, interface: String) -> Bool {
+        guard capture.dataLinkType == PacketCapture.linkEthernet else { return false }
+        let atGroup = host.gatewayHardwareAddresses(interface).contains { ($0.first ?? 0) & 0x01 != 0 }
+        if atGroup, groupGatewaysLogged.withLock({ $0.insert(interface).inserted }) {
+            Log.sniffer.notice("the gateway on \(interface, privacy: .public) answers at a broadcast or multicast hardware address; frames to such addresses are read as sent there")
+        }
+        return atGroup
+    }
+
     /// How the kernel filter tells this interface's outbound packets, as the interface is now.
-    private func direction(for capture: any CaptureSource, interface: String) -> CaptureFilter.Direction {
+    private func direction(for capture: any CaptureSource, interface: String, gatewayAtGroupAddress: Bool) -> CaptureFilter.Direction {
         if capture.dataLinkType == PacketCapture.linkEthernet, let mac = host.hardwareAddress(interface) {
-            return .hardwareAddress(mac)
+            return .hardwareAddress(mac, gatewayAtGroupAddress: gatewayAtGroupAddress)
         }
         // Only this interface's: every address costs instructions, and a packet captured
         // here leaves from one of them. Sorted, so an unchanged set compares equal.
@@ -210,7 +228,8 @@ final class Sniffer: @unchecked Sendable {
     /// Reads until the interface changes, the device fails, or stop is called.
     private func captureLoop(_ capture: any CaptureSource, interface: String, direction installed: CaptureFilter.Direction, shouldStop: () -> Bool) -> CaptureEnd {
         var installed = installed
-        var namer = FlowNamer(localAddresses: host.addresses(interface), resolvers: host.resolvers(), hardwareAddress: installed.hardwareAddress)
+        var namer = FlowNamer(localAddresses: host.addresses(interface), resolvers: host.resolvers(),
+                              hardwareAddress: installed.hardwareAddress, gatewayAtGroupAddress: installed.gatewayAtGroupAddress)
         // Every way out drops the namer, and with it the flows whose handshake was not read.
         defer {
             let events = namer.endCapture()
@@ -241,7 +260,7 @@ final class Sniffer: @unchecked Sendable {
                     // address is already read as sent.
                     if namer.hardwareSourceUnknown(packet), Date().timeIntervalSince(lastHardwareCheck) >= Self.staleRefreshEvery {
                         lastHardwareCheck = Date()
-                        follow(capture, interface: interface, installed: &installed, namer: &namer)
+                        follow(capture, interface: interface, installed: &installed, namer: &namer, readingGateway: false)
                     }
                     events += namer.observe(packet, at: timestamp)
                 }
@@ -266,7 +285,7 @@ final class Sniffer: @unchecked Sendable {
                     Log.sniffer.info("default route moved to \(current, privacy: .public); reopening")
                     return .moved
                 }
-                follow(capture, interface: interface, installed: &installed, namer: &namer)
+                follow(capture, interface: interface, installed: &installed, namer: &namer, readingGateway: true)
                 // An address the interface has gained is this Mac's from here on; a packet
                 // sent from it tells sooner, a reply sent to it does not. It comes with a
                 // network whose resolvers the system names a moment later, and once the
@@ -280,13 +299,16 @@ final class Sniffer: @unchecked Sendable {
 
     /// Brings the kernel filter and the namer to the interface's addresses as they are now. A
     /// rotated private Wi-Fi address or a renumbered tunnel would make the filter class every
-    /// outbound packet as inbound and drop it.
-    private func follow(_ capture: any CaptureSource, interface: String, installed: inout CaptureFilter.Direction, namer: inout FlowNamer) {
-        let direction = direction(for: capture, interface: interface)
+    /// outbound packet as inbound and drop it. The gateway's hardware address is read again
+    /// only at a check of the interface: a packet can prompt the other call, and a host on the
+    /// network must not be able to prompt a reading of the neighbour table.
+    private func follow(_ capture: any CaptureSource, interface: String, installed: inout CaptureFilter.Direction, namer: inout FlowNamer, readingGateway: Bool) {
+        let atGroup = readingGateway ? gatewayAtGroupAddress(capture, interface: interface) : installed.gatewayAtGroupAddress
+        let direction = direction(for: capture, interface: interface, gatewayAtGroupAddress: atGroup)
         guard direction != installed else { return }
-        Log.sniffer.notice("\(interface, privacy: .public) changed its addresses; rebuilding the kernel filter")
+        Log.sniffer.notice("\(interface, privacy: .public) changed its addresses, or its gateway's; rebuilding the kernel filter")
         installFilter(on: capture, direction: direction, interface: interface)
-        namer.updateHardwareAddress(direction.hardwareAddress)
+        namer.updateHardwareAddress(direction.hardwareAddress, gatewayAtGroupAddress: direction.gatewayAtGroupAddress)
         installed = direction
     }
 

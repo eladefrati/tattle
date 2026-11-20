@@ -12,10 +12,14 @@
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_dl.h>
+#include <net/route.h>
+#include <netinet/in.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/sysctl.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -93,6 +97,53 @@ int tattle_interface_mac(const char *ifname, uint8_t mac[6]) {
         break;
     }
     freeifaddrs(list);
+    return found;
+}
+
+int tattle_neighbor_mac(const char *ifname, const uint8_t *address, size_t length, uint8_t mac[6]) {
+    if (length != 4 && length != 16) return -1;
+    unsigned int ifindex = if_nametoindex(ifname);
+    if (ifindex == 0) return -1;
+    // The routes that hold a link address, which is the table `arp -a` and `ndp -a` print.
+    int mib[6] = { CTL_NET, PF_ROUTE, 0, length == 4 ? AF_INET : AF_INET6, NET_RT_FLAGS, RTF_LLINFO };
+    size_t needed = 0;
+    if (sysctl(mib, 6, NULL, &needed, NULL, 0) != 0 || needed == 0) return -1;
+    // The table can grow between the two calls; the slack covers a few new entries.
+    needed += 1024;
+    char *table = malloc(needed);
+    if (table == NULL) return -1;
+    int found = -1;
+    if (sysctl(mib, 6, table, &needed, NULL, 0) == 0) {
+        const char *end = table + needed;
+        for (const char *next = table; next + sizeof(struct rt_msghdr) <= end;) {
+            const struct rt_msghdr *message = (const struct rt_msghdr *)next;
+            if (message->rtm_msglen < sizeof(struct rt_msghdr) || next + message->rtm_msglen > end) break;
+            next += message->rtm_msglen;
+            // The destination, then the link address it resolves to, each padded to 4 bytes.
+            const struct sockaddr *destination = (const struct sockaddr *)(message + 1);
+            if ((const char *)destination + sizeof(struct sockaddr) > next || destination->sa_len == 0) continue;
+            const struct sockaddr_dl *link = (const struct sockaddr_dl *)((const char *)destination + ((destination->sa_len + 3u) & ~3u));
+            if ((const char *)link + sizeof(struct sockaddr_dl) > next) continue;
+            // An entry still being resolved has no address yet.
+            if (link->sdl_family != AF_LINK || link->sdl_alen != 6 || link->sdl_index != ifindex) continue;
+            if ((const char *)LLADDR(link) + 6 > next) continue;
+            if (length == 4) {
+                if (destination->sa_family != AF_INET || destination->sa_len < sizeof(struct sockaddr_in)) continue;
+                if (memcmp(&((const struct sockaddr_in *)destination)->sin_addr, address, 4) != 0) continue;
+            } else {
+                if (destination->sa_family != AF_INET6 || destination->sa_len < sizeof(struct sockaddr_in6)) continue;
+                uint8_t entry[16];
+                memcpy(entry, &((const struct sockaddr_in6 *)destination)->sin6_addr, 16);
+                // The kernel keeps a link-local address's interface in its third and fourth bytes.
+                if (entry[0] == 0xfe && (entry[1] & 0xc0) == 0x80) entry[2] = entry[3] = 0;
+                if (memcmp(entry, address, 16) != 0) continue;
+            }
+            memcpy(mac, LLADDR(link), 6);
+            found = 0;
+            break;
+        }
+    }
+    free(table);
     return found;
 }
 

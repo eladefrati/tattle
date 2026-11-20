@@ -155,21 +155,26 @@ struct FlowNamer: Sendable {
     private var resolvers: Set<IPAddress>
     /// The capture interface's hardware address, on a link whose frames carry one.
     private var hardwareAddress: [UInt8]?
+    /// The interface's gateway answers at a broadcast or multicast hardware address, so what
+    /// this Mac sends past the link is addressed to one.
+    private var gatewayAtGroupAddress = false
     private var dnsMap = DNSMap()
     /// This Mac's DNS queries still waiting for a reply.
     private var queries = AwaitedQueries()
     private var flows: [FlowKey: Flow] = [:]
     private var flowOrder = ArrivalOrder<FlowKey>()
 
-    init(localAddresses: Set<IPAddress>, resolvers: Set<IPAddress>, hardwareAddress: [UInt8]? = nil) {
+    init(localAddresses: Set<IPAddress>, resolvers: Set<IPAddress>, hardwareAddress: [UInt8]? = nil, gatewayAtGroupAddress: Bool = false) {
         local = localAddresses
         self.resolvers = resolvers
         self.hardwareAddress = hardwareAddress
+        self.gatewayAtGroupAddress = gatewayAtGroupAddress
     }
 
     /// A private Wi-Fi address rotates under an open capture.
-    mutating func updateHardwareAddress(_ address: [UInt8]?) {
+    mutating func updateHardwareAddress(_ address: [UInt8]?, gatewayAtGroupAddress: Bool) {
         hardwareAddress = address
+        self.gatewayAtGroupAddress = gatewayAtGroupAddress
     }
 
     /// Addresses change with DHCP leases and network switches.
@@ -222,11 +227,13 @@ struct FlowNamer: Sendable {
     /// to this Mac's own hardware address or to a broadcast or multicast one. This Mac
     /// addresses no frame to itself, and sends to a group address nothing read here (no
     /// connection, no query to a resolver), so a frame addressed that way is not read as
-    /// sent (ADR-0006). The kernel filter drops it first; this holds when none is installed.
+    /// sent (ADR-0006). The exception is a network whose gateway answers at a group address:
+    /// there what this Mac sends past the link is addressed to one, and is read. The kernel
+    /// filter drops such a frame first; this holds when none is installed.
     private func isSent(_ p: Packet) -> Bool {
         guard let hardwareAddress else { return true }
         guard isFromInterface(p), let destination = p.linkDestination, let first = destination.first else { return false }
-        return first & 0x01 == 0 && !destination.elementsEqual(hardwareAddress)
+        return (gatewayAtGroupAddress || first & 0x01 == 0) && !destination.elementsEqual(hardwareAddress)
     }
 
     /// The packet is under one of this Mac's addresses and from a hardware address this namer

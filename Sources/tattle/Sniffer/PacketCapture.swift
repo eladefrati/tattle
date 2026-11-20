@@ -139,6 +139,27 @@ final class PacketCapture: CaptureSource {
         return mac
     }
 
+    /// The hardware addresses the interface's gateways answer at, IPv4's then IPv6's: of each
+    /// family whose default route is on the interface, the router's entry in the system's
+    /// neighbour table. A gateway with no resolved entry is left out.
+    static func gatewayHardwareAddresses(of interface: String) -> [[UInt8]] {
+        gatewayHardwareAddresses(of: interface, store: { SCDynamicStoreCopyValue(nil, $0 as CFString) as? [String: Any] }) { address, interface in
+            var mac = [UInt8](repeating: 0, count: 6)
+            guard tattle_neighbor_mac(interface, address.bytes, address.bytes.count, &mac) == 0 else { return nil }
+            return mac
+        }
+    }
+
+    /// The same, from a store lookup by key and a neighbour table lookup by address and interface.
+    static func gatewayHardwareAddresses(of interface: String, store: (String) -> [String: Any]?,
+                                         neighbour: (IPAddress, String) -> [UInt8]?) -> [[UInt8]] {
+        ["State:/Network/Global/IPv4", "State:/Network/Global/IPv6"].compactMap { key in
+            guard let global = store(key), global["PrimaryInterface"] as? String == interface,
+                  let router = (global["Router"] as? String).flatMap(IPAddress.init(text:)) else { return nil }
+            return neighbour(router, interface)
+        }
+    }
+
     /// The interface carrying the default route, from the system configuration store: what
     /// `route get default` reports, or `route get -inet6 default` on an IPv6-only network.
     static func primaryInterface() -> String? {

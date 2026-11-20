@@ -13,8 +13,9 @@ import Foundation
 ///
 /// Outbound is told from the interface's own hardware address on Ethernet, and from the
 /// interface's addresses on links without one. A frame from that hardware address which is
-/// addressed to it, or to a broadcast or multicast address, is dropped: this Mac sends
-/// nothing so addressed that the parsers read, and another host can (ADR-0006). Fragments
+/// addressed to it, or to a broadcast or multicast address, is dropped: another host can
+/// send one, and this Mac sends the parsers nothing so addressed, except on a network whose
+/// gateway answers at such an address, where those frames are kept (ADR-0006). Fragments
 /// other than the first are dropped; IPv6 extension headers are not followed (a host's own
 /// TCP and UDP rarely have any).
 struct CaptureFilter: Equatable, Sendable {
@@ -27,14 +28,21 @@ struct CaptureFilter: Equatable, Sendable {
 
     /// How a packet is known to leave this Mac.
     enum Direction: Equatable, Sendable {
-        /// Its Ethernet source is this hardware address.
-        case hardwareAddress([UInt8])
+        /// Its Ethernet source is this hardware address, and its destination another host's:
+        /// not this address, nor a broadcast or multicast one unless the interface's gateway
+        /// answers at one, where everything sent past the link is addressed so (ADR-0006).
+        case hardwareAddress([UInt8], gatewayAtGroupAddress: Bool = false)
         /// Its IP source is one of these addresses (4 or 16 bytes each).
         case sourceAddresses([[UInt8]])
 
         var hardwareAddress: [UInt8]? {
-            if case .hardwareAddress(let address) = self { return address }
+            if case .hardwareAddress(let address, _) = self { return address }
             return nil
+        }
+
+        var gatewayAtGroupAddress: Bool {
+            if case .hardwareAddress(_, true) = self { return true }
+            return false
         }
     }
 
@@ -57,7 +65,7 @@ struct CaptureFilter: Equatable, Sendable {
     /// copied and the parsers do all the dropping.
     static func program(linkType: UInt32, direction: Direction) -> CaptureFilter? {
         guard let linkLength = linkHeaderLength(linkType) else { return nil }
-        if case .hardwareAddress(let mac) = direction, mac.count != 6 || linkType != PacketCapture.linkEthernet { return nil }
+        if case .hardwareAddress(let mac, _) = direction, mac.count != 6 || linkType != PacketCapture.linkEthernet { return nil }
 
         var a = Assembler()
         let v4 = a.label(), v6 = a.label(), accept = a.label(), drop = a.label()
@@ -144,7 +152,7 @@ struct CaptureFilter: Equatable, Sendable {
 
     private static func emitDirection(_ a: inout Assembler, _ direction: Direction, linkLength L: UInt32, family: Family, outbound: Assembler.Label, inbound: Assembler.Label, drop: Assembler.Label) {
         switch direction {
-        case .hardwareAddress(let mac):
+        case .hardwareAddress(let mac, let gatewayAtGroupAddress):
             let high = UInt32(mac[0]) << 24 | UInt32(mac[1]) << 16 | UInt32(mac[2]) << 8 | UInt32(mac[3])
             let low = UInt32(mac[4]) << 8 | UInt32(mac[5])
             a.loadWord(at: 6)
@@ -152,9 +160,12 @@ struct CaptureFilter: Equatable, Sendable {
             a.loadHalf(at: 10)
             a.jumpIfEqual(low, nil, else: inbound)
             // From the interface's address, and outbound only if addressed to another host's:
-            // not to a group address (the first byte's low bit), nor to the interface's own.
-            a.loadByte(at: 0)
-            a.jumpIfSet(0x01, drop, else: nil)
+            // not to a group address (the first byte's low bit), unless the gateway answers
+            // at one, nor to the interface's own.
+            if !gatewayAtGroupAddress {
+                a.loadByte(at: 0)
+                a.jumpIfSet(0x01, drop, else: nil)
+            }
             a.loadWord(at: 0)
             a.jumpIfEqual(high, nil, else: outbound)
             a.loadHalf(at: 4)

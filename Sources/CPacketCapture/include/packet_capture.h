@@ -59,4 +59,9 @@ int tattle_broker_is_registered(const char *service);
 // interface has none (a tunnel, for instance).
 int tattle_interface_mac(const char *ifname, uint8_t mac[6]);
 
+// The hardware address the system's neighbour table (ARP, or neighbour discovery for IPv6)
+// holds for `address`, 4 or 16 bytes, on the interface `ifname`. Returns 0 and fills `mac`,
+// or -1 when the table has no resolved entry for it there.
+int tattle_neighbor_mac(const char *ifname, const uint8_t *address, size_t length, uint8_t mac[6]);
+
 #endif
