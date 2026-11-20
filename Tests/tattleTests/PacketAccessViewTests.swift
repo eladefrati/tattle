@@ -27,7 +27,7 @@ final class PacketAccessViewTests: XCTestCase {
     func testInstallExplanationNamesEveryPacketTattleReads() {
         let text = CaptureBroker.installExplanation
         XCTAssertTrue(text.hasPrefix("Names for connections come from the first packets of each one and from this Mac's DNS lookups and their replies, which only a root process may read."), text)
-        XCTAssertTrue(text.contains("Tattle reads only those packets."), text)
+        XCTAssertTrue(text.contains("Tattle itself reads only the first packets of each connection and the DNS lookups and replies."), text)
     }
 
     func testExplanationAndButtonForEachState() {
