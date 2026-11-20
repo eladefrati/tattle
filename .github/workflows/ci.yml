@@ -4,11 +4,29 @@ on:
   push:
   pull_request:
 
+# Read only: the jobs run the repository's code and its dependencies'.
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: macos-latest
+    # The newest macOS, and the oldest GitHub still offers: macOS 14, the oldest the package
+    # supports, is no longer offered.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+          - runner: macos-15
+            # The image's default Xcode has no macOS 26 SDK, which the glass look needs.
+            developer-dir: /Applications/Xcode_26.3.app
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: ${{ matrix.developer-dir }}
     steps:
-      - uses: actions/checkout@v7
+      # Pinned by commit: a tag can be moved to other code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: System Integrity Protection
         run: csrutil status
       - name: Test

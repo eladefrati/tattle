@@ -138,8 +138,9 @@ Swift, SwiftUI `MenuBarExtra`, macOS 14 or later. Swift Package Manager with a M
 (`make app`) that assembles the app bundle (Info.plist with `LSUIElement`) and signs it and the broker with
 the hardened runtime: with the first Apple Development identity in the keychain, or ad hoc
 without one; no Xcode project
-unless something forces one. GitHub Actions on `macos-latest` runs the tests and `make app`
-on every push and pull request.
+unless something forces one. GitHub Actions runs the tests and `make app` on every push and
+pull request, on `macos-latest` and on `macos-15`, the oldest macOS GitHub still offers;
+macOS 14 is no longer offered, so the oldest supported release runs in no CI.
 
 No version is written in the code. `make app` records two values in the app it builds, read
 from the source before it builds (`scripts/source-version.sh`): the version, the newest
