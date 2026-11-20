@@ -146,8 +146,8 @@ approval across rebuilds. To choose the identity, pass `SIGN_IDENTITY=<name>` to
 
 Connection names come from the first packets of each connection and, as a fallback, from
 the replies to this Mac's DNS queries on port 53; only root may read them. A query is read
-only to tell which replies answer one: it is held in memory until its reply comes, about
-ten seconds at most, and is never stored. **Allow packet access** in the
+only to tell which replies answer one: what is kept of it for that goes when its reply
+comes, or after about ten seconds, and none of it is stored. **Allow packet access** in the
 Network tab installs the packet-access broker, a small
 launch daemon that opens the capture device read-only and hands it to Tattle. The broker
 answers only a process that runs as the user who installed it, carries Tattle's signature,

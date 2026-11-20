@@ -25,9 +25,10 @@ Every surface runs the same pipeline on a different source:
   the TLS ClientHello on TCP, for the Server Name Indication; the QUIC
   Initial packet, which carries the same ClientHello under a key derivable from the packet
   itself; and the Host header of a plaintext HTTP request. A name from the wire wins; the DNS map is a fallback
-  ([ADR-0001](adr/0001-sniffer-coverage.md)). A query is held in memory until its reply
-  comes or it is ten seconds old, and nothing of it past the sniffer's next pass over its
-  tables, about once a second; it is never shown, logged or stored
+  ([ADR-0001](adr/0001-sniffer-coverage.md)). The namer holds a query until its reply
+  comes or it is ten seconds old, and nothing of it past its next pass over its tables,
+  about once a second; the capture's read buffer holds the packets last read, a query
+  among them, until a later read overwrites them. A query is never shown, logged or stored
   ([ADR-0006](adr/0006-dns-replies-matched-to-queries.md)). The sniffer gets its
   capture descriptor from the broker (Privileges).
 

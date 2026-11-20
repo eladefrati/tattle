@@ -25,12 +25,14 @@ so nothing told a reply that answers a query from one that answers none.
    transaction id and question are those of a query still waiting.
 2. The sniffer therefore reads this Mac's outgoing port-53 queries to its resolvers, which
    it did not read before.
-3. A query is held in memory for that match and nothing else: its resolver, port, id and
+3. The namer holds a query for that match and nothing else: its resolver, port, id and
    question, and never more than 1,024 of them. Its question is dropped when its reply is
    taken. A query ten seconds old is answered by no reply, and it, and the resolver, port
-   and id of one already answered, are dropped at the sniffer's next pass over its tables,
-   which it makes about once a second while it captures. A query never names a connection,
-   and is never shown, logged or written to the database.
+   and id of one already answered, are dropped at the namer's next pass over its tables,
+   which it makes about once a second while the sniffer captures. Beside the namer, the
+   capture's read buffer holds the packets last read, queries among them, until a later
+   read overwrites them. A query never names a connection, and is never shown, logged or
+   written to the database.
 
 What ADR-0001 decision 2 says of the map's use stands: it is a fallback, never shown when a
 wire name exists, and marked "from DNS".
