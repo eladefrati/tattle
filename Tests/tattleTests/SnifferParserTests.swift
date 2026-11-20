@@ -72,6 +72,10 @@ final class SnifferParserTests: XCTestCase {
         ("a 64-byte label", Array((String(repeating: "a", count: 64) + ".com").utf8)),
         ("more than 253 bytes", Array(Array(repeating: String(repeating: "a", count: 63), count: 4).joined(separator: ".").utf8)),
         ("a port outside a Host header", Array("example.com:443".utf8)),
+        ("an IPv4 address", Array("17.253.144.10".utf8)),
+        ("a number", Array("297865738".utf8)),
+        ("a last label that is a number", Array("example.10".utf8)),
+        ("a hexadecimal last label", Array("17.253.144.0x0a".utf8)),
     ]
 
     static func hex(_ text: String) -> [UInt8] {
@@ -274,6 +278,10 @@ final class SnifferParserTests: XCTestCase {
         XCTAssertEqual(edge, longest, "63-byte labels and 253 bytes in all are allowed")
         guard case .hello(let underscore) = TLS.clientHello(Self.clientHello(sni: Array("_dmarc.x-1.example".utf8))) else { return XCTFail() }
         XCTAssertEqual(underscore, "_dmarc.x-1.example")
+        // Only the last label decides whether a name reads as an address.
+        for name in ["10.example", "4.3.2.1.in-addr.arpa", "example.1a", "example.0xg", "x0x10"] {
+            XCTAssertEqual(HostName(Array(name.utf8))?.text, name, "\(name) is a host name")
+        }
     }
 
     func testHTTPHost() {
@@ -283,6 +291,9 @@ final class SnifferParserTests: XCTestCase {
         XCTAssertNotNil(late, "a request")
         XCTAssertNil(late?.host, "headers end at the blank line")
         XCTAssertNil(HTTP.request(Array("SSH-2.0-OpenSSH\r\n".utf8)[...]))
+        let address = HTTP.request(Array("GET / HTTP/1.1\r\nHost: 17.253.144.10:8080\r\n\r\n".utf8)[...])
+        XCTAssertNotNil(address, "a request")
+        XCTAssertNil(address?.host, "an address is not a name, with a port or without")
     }
 
     // MARK: DNS

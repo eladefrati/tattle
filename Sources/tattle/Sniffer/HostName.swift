@@ -15,6 +15,11 @@ struct HostName: Hashable, Sendable {
     /// Labels of letters, digits, hyphens and underscores, 1 to 63 bytes each and 253 in all,
     /// no label starting or ending with a hyphen. Uppercase is lowered, one trailing dot (the
     /// root) is dropped. `allowingPort` drops a trailing `:port`, which only a Host header has.
+    ///
+    /// A name whose last label is a number, in decimal or in hexadecimal after `0x`, is
+    /// refused: no top-level domain is one, and it is what makes a host read as an IPv4
+    /// address (the URL standard's "ends in a number"), so `17.253.144.10` in an SNI or a
+    /// Host header would title a row with an address the connection may not go to.
     init?(_ bytes: some Collection<UInt8>, allowingPort: Bool = false) {
         var name = Array(bytes)
         if allowingPort, let colon = name.lastIndex(of: Self.colon) {
@@ -41,6 +46,17 @@ struct HostName: Hashable, Sendable {
                 return nil
             }
         }
+        let lastLabel = lowered[(lowered.lastIndex(of: Self.dot).map { $0 + 1 } ?? 0)...]
+        guard !Self.isNumber(lastLabel) else { return nil }
         text = String(decoding: lowered, as: UTF8.self)
+    }
+
+    /// Digits only, or `0x` and then hexadecimal digits only, none included; lowercase.
+    private static func isNumber(_ label: ArraySlice<UInt8>) -> Bool {
+        let digits = UInt8(ascii: "0")...UInt8(ascii: "9")
+        if label.starts(with: [UInt8(ascii: "0"), UInt8(ascii: "x")]) {
+            return label.dropFirst(2).allSatisfy { digits.contains($0) || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains($0) }
+        }
+        return !label.isEmpty && label.allSatisfy { digits.contains($0) }
     }
 }
