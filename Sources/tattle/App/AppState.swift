@@ -26,6 +26,9 @@ final class AppState {
     }
     @ObservationIgnored private var heldSample = ResourceSample.zero
     @ObservationIgnored private var heldNetworkSnapshot: NetworkSnapshot?
+    /// Deletes expired unconfirmed answers while the app runs, which can be weeks: a lookup
+    /// ignores one, but until it is deleted its text stays in the database.
+    private let pruning: Task<Void, Never>
 
     /// The sampler and the network readings keep running with the panel closed, for the menu
     /// bar label and the history. The panel reads them through these, which do not touch the
@@ -33,7 +36,10 @@ final class AppState {
     var panelSample: ResourceSample { panelIsShowing ? sampler.sample : heldSample }
     var panelNetworkSnapshot: NetworkSnapshot? { panelIsShowing ? network.snapshot : heldNetworkSnapshot }
 
-    init(database: AppDatabase, socketTable: @escaping @Sendable () throws -> [SocketEntry] = { try SocketTable.read() }) throws {
+    init(
+        database: AppDatabase, socketTable: @escaping @Sendable () throws -> [SocketEntry] = { try SocketTable.read() },
+        pruneInterval: Duration = .seconds(3600)
+    ) throws {
         rules = try RuleStore(database: database)
         connections = ConnectionStore(database: database)
         settings = try AppSettings(store: SettingsStore(database: database))
@@ -46,5 +52,19 @@ final class AppState {
         if pruned > 0 {
             Log.app.info("pruned \(pruned) expired unconfirmed LLM rules")
         }
+        pruning = Task.detached(priority: .utility) { [rules] in
+            while true {
+                try? await Task.sleep(for: pruneInterval)
+                guard !Task.isCancelled else { return }
+                do {
+                    let pruned = try rules.pruneExpired()
+                    if pruned > 0 { Log.app.info("pruned \(pruned) expired unconfirmed LLM rules") }
+                } catch {
+                    Log.app.error("pruning expired LLM rules failed: \(error, privacy: .public)")
+                }
+            }
+        }
     }
+
+    deinit { pruning.cancel() }
 }

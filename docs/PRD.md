@@ -194,7 +194,8 @@ Resolution order for any item:
    then reads as it would without it and can be asked about again. The source stays
    `llm` so provenance is never lost. The schema lets the model propose a pattern, and
    nothing uses it: a kept answer is read only for the exact item (ADR-0005). Unconfirmed
-   LLM rules expire after 45 days.
+   LLM rules expire after 45 days: a lookup ignores one from then on, and it is deleted at
+   launch or within the hour while the app runs.
 
 Every detail page answers three questions. **What is this** is the rule's `purpose`. **Why
 it is probably here** opens with a sentence the app builds from the facts (who opened the

@@ -119,6 +119,20 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertEqual(try store.rules().map(\.pattern), ["builtin.example", "fresh.example", "kept.example"])
     }
 
+    /// The app runs for weeks: an answer that expires after launch goes while it runs, not
+    /// at the next launch.
+    @MainActor
+    func testAnAnswerThatExpiresAfterLaunchIsPrunedWhileTheAppRuns() async throws {
+        let state = try AppState(database: try AppDatabase.inMemory(), socketTable: { [] }, pruneInterval: .milliseconds(50))
+        try state.rules.save(rule("old.example", source: .llm, created: Date().addingTimeInterval(-46 * 86_400)))
+        try state.rules.save(rule("fresh.example", source: .llm, created: Date()))
+        let deadline = Date().addingTimeInterval(10)
+        while try state.rules.rules(kind: .host).count > 1, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(try state.rules.rules(kind: .host).map(\.pattern), ["fresh.example"])
+    }
+
     func testSaveReplacesSameKindPatternSource() throws {
         try store.save(rule("a.example", source: .llm, purpose: "first"))
         try store.save(rule("a.example", source: .llm, purpose: "second"))
