@@ -26,7 +26,8 @@ Every surface runs the same pipeline on a different source:
   Initial packet, which carries the same ClientHello under a key derivable from the packet
   itself; and the Host header of a plaintext HTTP request. A name from the wire wins; the DNS map is a fallback
   ([ADR-0001](adr/0001-sniffer-coverage.md)). A query is held in memory until its reply
-  comes, ten seconds at most, and is never shown, logged or stored
+  comes or it is ten seconds old, and nothing of it past the sniffer's next pass over its
+  tables, about once a second; it is never shown, logged or stored
   ([ADR-0006](adr/0006-dns-replies-matched-to-queries.md)). The sniffer gets its
   capture descriptor from the broker (Privileges).
 

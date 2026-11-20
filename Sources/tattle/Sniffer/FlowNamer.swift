@@ -114,7 +114,8 @@ struct FlowNamer: Sendable {
     static let flowCapacity = 4096
     /// The most handshake bytes buffered for one flow, TCP or QUIC.
     static let bufferLimit = 16_384
-    /// How long a DNS query this Mac sent is held for its reply (ADR-0006).
+    /// How long a reply can answer a DNS query this Mac sent (ADR-0006). A query older than
+    /// this is dropped at the next `expire`.
     static let queryAwaited = 10.0
     /// The most queries held; the oldest goes first.
     static let queryCapacity = 1024
@@ -503,8 +504,10 @@ private struct DNSMap {
 
 /// DNS queries this Mac sent and has no reply to yet, by what a reply must repeat: who was
 /// asked, from which port, under which id, and the question. A query is here for that match
-/// alone: taken out by its reply, or once older than `FlowNamer.queryAwaited`, and never
-/// more of them than `FlowNamer.queryCapacity`, the oldest going first.
+/// alone, and never more of them than `FlowNamer.queryCapacity`, the oldest going first. Its
+/// reply takes its question out; `forget` drops the ones older than `FlowNamer.queryAwaited`
+/// and what the order still lists of any that are gone, so nothing of a query outlasts the
+/// first `forget` after its reply or its time.
 private struct AwaitedQueries {
     struct Key: Hashable, Sendable {
         let resolver: IPAddress
@@ -539,6 +542,9 @@ private struct AwaitedQueries {
 
     mutating func forget(sentBy cutoff: Double) {
         while dropOldest(sentBy: cutoff) {}
+        // The order keeps a query's resolver, port and id after its reply took it out, and
+        // after it was dropped above until the list is next cut down.
+        order.sweep(capacity: 0, in: entries, serial: { $0.serial })
     }
 
     /// Removes the oldest query, if it was sent by `cutoff` (or at all, for nil). False when
