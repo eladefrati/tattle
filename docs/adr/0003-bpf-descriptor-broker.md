@@ -46,7 +46,8 @@ PRD's "no paid account" non-goal is what rules it out, not a technical limit.
    requested interface, returns the descriptor in the reply to that request, and keeps no
    descriptor. launchd holds its Mach service in the system domain, where only root can
    register a name. launchd starts the broker on the first request, and starts it again
-   after it exits a minute idle. The broker is written in C and does no parsing. Between
+   after it exits a minute after it started or after the last request it accepted, whichever
+   is later: a refused request, from any account, does not keep it running. The broker is written in C and does no parsing. Between
    requests it holds only the connections it has answered and not yet closed, each until
    the close described in 2.
 2. The broker answers a request only when three conditions hold for the process that sent
