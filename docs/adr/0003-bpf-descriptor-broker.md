@@ -171,6 +171,16 @@ as root.
     loader or a system library's initializer
   - an app replaced before the user first opened it, which is the user installing
     someone else's app
+- The guarantee is about who receives a descriptor, not what is done with it. The broker
+  opens the device, sets its buffer and binds it to the requested interface; the rest is the
+  holder's. The holder sets the filter, which decides which packets it reads and how much
+  of each, so it can read every packet on the interface in full, not only the first packets
+  of each flow that Tattle reads. It can bind the device to another interface and put that
+  interface in promiscuous mode. macOS has no ioctl that locks a BPF descriptor against
+  these, as FreeBSD's `BIOCLOCK` does, and XNU's `bpfioctl` checks no credential for them,
+  so the broker cannot hand over a narrower descriptor (read from the SDK's `net/bpf.h` and
+  XNU's `bsd/net/bpf.c`, not run). The device is opened read-only, so the holder cannot
+  send packets through it. The Packet access screen says so before install.
 - What "Tattle's signature" means depends on how the build is signed. Ad hoc, it means
   this exact build's slice that installed the broker. A universal build run under Rosetta
   runs its other slice, which the broker reads as another build: the Packet access screen
