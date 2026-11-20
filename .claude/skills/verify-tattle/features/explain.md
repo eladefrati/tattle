@@ -171,8 +171,8 @@ Preconditions:
   button. Press it: `Cancel` and `Forget answer`. `Cancel` puts `Forget…` back and `$V db
   "select count(*) from rule where pattern = 'example.com'"` is still 1. `Forget…`, `Forget
   answer`: `No explanation yet.` with `Explain`, and the count is 0. `Explain` again stores a
-  new unconfirmed answer, which shows `Ask again`, `Confirm` and `Forget…`, in that order.
-  An answer that
+  new unconfirmed answer: `Model answer, unconfirmed` on a line of its own, and under it
+  `Forget…` at the left, `Ask again` and `Confirm` at the right. An answer that
   was not kept (no `Confirm`) has no `Forget…`. Where the connection is a first contact (an
   address the copy's history does not hold; a copy launched on a new data folder holds
   none), its row under `First contact` reads `<terminal> to example.com`, or `<terminal> to

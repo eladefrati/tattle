@@ -42,22 +42,36 @@ struct ExplainSection: View {
                 RowLine()
             }
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
+                // A kept answer, confirmed or not: one shown only in this view has nothing to
+                // forget, and no other rule is the user's to delete. What it is stands on a line
+                // of its own, and Forget at the row's other end from the buttons that keep it.
+                let isKept = rule.map { $0.source == .llm && $0.id != nil } ?? false
+                if isKept {
                     Text(rule.map(provenance) ?? "No explanation yet.")
                         .font(PanelFont.small)
                         .foregroundStyle(PanelColor.sub)
-                    Spacer(minLength: 0)
-                    if busy { ProgressView().controlSize(.small) }
-                    if let rule {
-                        // A kept answer, confirmed or not: one shown only in this view has
-                        // nothing to forget, and no other rule is the user's to delete.
-                        let isKept = rule.source == .llm && rule.id != nil
-                        if forgetting && isKept {
+                }
+                HStack(spacing: 8) {
+                    if isKept, let rule {
+                        if forgetting {
                             Button("Cancel") { forgetting = false }
                                 .buttonStyle(PanelButtonStyle(height: 22))
                             Button("Forget answer") { forget(rule) }
                                 .buttonStyle(PanelButtonStyle(kind: .danger, height: 22))
                         } else {
+                            Button("Forget\u{2026}") { forgetting = true }
+                                .buttonStyle(PanelButtonStyle(height: 22))
+                                .disabled(busy)
+                        }
+                    } else {
+                        Text(rule.map(provenance) ?? "No explanation yet.")
+                            .font(PanelFont.small)
+                            .foregroundStyle(PanelColor.sub)
+                    }
+                    Spacer(minLength: 0)
+                    if busy { ProgressView().controlSize(.small) }
+                    if let rule {
+                        if !(forgetting && isKept) {
                             if rule.source == .llm && rule.confirmed == nil {
                                 Button("Ask again") { ask() }
                                     .buttonStyle(PanelButtonStyle(height: 22))
@@ -66,11 +80,6 @@ struct ExplainSection: View {
                             if rule.source == .llm && rule.confirmed == nil && rule.id != nil {
                                 Button("Confirm") { confirm(rule) }
                                     .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
-                            }
-                            if isKept {
-                                Button("Forget\u{2026}") { forgetting = true }
-                                    .buttonStyle(PanelButtonStyle(height: 22))
-                                    .disabled(busy)
                             }
                         }
                     } else {
