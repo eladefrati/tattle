@@ -225,7 +225,8 @@ Preconditions:
   which holds them about two minutes. Time an open connection with `lsof -iTCP:<port>
   -sTCP:ESTABLISHED`, not with how long `nc` runs.
 - The sniffer's DNS fallback names a connection from a UDP DNS reply it captured for
-  that address in the last hour (the newest 4096 answers at most), if one of the Mac's resolvers sent it to this Mac and the
+  that address in the last hour (the newest 4096 answers at most), if one of the Mac's resolvers sent it to this Mac
+  in answer to a query the sniffer saw this Mac send it in the ten seconds before (same port, id and question), and the
   address's record is for the question name or a CNAME target reached from it. A reply with
   more than one question, a name past 255 bytes, or more than 1,024 labels and pointers to
   walk names nothing. `connect` looks its host up over TCP so the fallback

@@ -371,6 +371,49 @@ final class SnifferParserTests: XCTestCase {
         0xc0, 0x10, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 93, 184, 216, 34,
     ]
 
+    /// A query for www.example.com's A record, as a resolver's client sends it.
+    static let query: [UInt8] = [
+        0xab, 0xcd, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        3, 0x77, 0x77, 0x77, 7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 3, 0x63, 0x6f, 0x6d, 0,
+        0x00, 0x01, 0x00, 0x01,
+    ]
+
+    func testDNSQuery() {
+        let query = DNS.parseQuery(Self.query[...])
+        XCTAssertEqual(query?.id, 0xabcd)
+        XCTAssertEqual(query?.question, DNS.Question(name: "www.example.com", type: 1, qclass: 1))
+        XCTAssertEqual(DNS.transactionID(Self.query[...]), 0xabcd)
+        XCTAssertNil(DNS.transactionID([0xab][...]))
+        XCTAssertNil(DNS.parseReply(Self.query[...]), "a query is no reply")
+        XCTAssertNil(DNS.parseQuery(Self.compressedReply[...]), "a reply is no query")
+
+        var cased = Self.query
+        cased[13] = 0x57  // "Www"
+        XCTAssertEqual(DNS.parseQuery(cased[...])?.question.name, "www.example.com", "case is the sender's to vary, and the reply's to repeat")
+        var aaaa = Self.query
+        aaaa[30] = 28
+        XCTAssertEqual(DNS.parseQuery(aaaa[...])?.question.type, 28)
+        // An EDNS record after the question, as most queries carry.
+        var edns = Self.query + [0, 0x00, 0x29, 0x04, 0xd0, 0, 0, 0, 0, 0, 0]
+        edns[11] = 1
+        XCTAssertEqual(DNS.parseQuery(edns[...])?.question.name, "www.example.com")
+
+        var update = Self.query
+        update[2] = 0x29  // opcode 5
+        XCTAssertNil(DNS.parseQuery(update[...]), "not a standard query")
+        var two = Self.query
+        two[5] = 2
+        XCTAssertNil(DNS.parseQuery(two[...]), "more than one question")
+        var newline = Self.query
+        newline[15] = 0x0a
+        XCTAssertNil(DNS.parseQuery(newline[...]), "a name that is no host name")
+        XCTAssertNil(DNS.parseQuery(Self.query.dropLast(2)), "cut before the question ends")
+
+        let reply = DNS.parseReply(Self.compressedReply[...])
+        XCTAssertEqual(reply?.id, 0x1234)
+        XCTAssertEqual(reply?.question, DNS.Question(name: "www.example.com", type: 1, qclass: 1), "a reply repeats the question it answers")
+    }
+
     func testDNSReplyWithCompression() {
         let reply = DNS.parseReply(Self.compressedReply[...])
         XCTAssertEqual(reply?.name, "www.example.com", "the name the application asked for")

@@ -292,7 +292,7 @@ cmd_db() {
 # client's first line, so the connection is still open, and in the panel, when the 20 s
 # timeout passes. example.com closed them after 3 s and 14 s.
 # The address is looked up over TCP from the gateway: the capture filter keeps only UDP
-# DNS replies, so the sniffer never learns the name from the lookup, and its DNS
+# DNS queries and replies, so the sniffer never learns the name from the lookup, and its DNS
 # fallback cannot name the garbage and silent connections. The local port is chosen
 # here, so the history row is found by it; --port reuses one, and the address this run
 # last used from it to the same host, for a second connection on the same four-tuple

@@ -95,7 +95,8 @@ struct FlowEvent: Equatable, Sendable {
 }
 
 /// Turns captured packets into names for connections. Keeps, per flow, only the handshake
-/// bytes until a name is found or ruled out; keeps no packet contents otherwise.
+/// bytes until a name is found or ruled out, and of this Mac's DNS queries what their
+/// replies are matched by, until the reply; keeps no packet contents otherwise.
 struct FlowNamer: Sendable {
     /// A wire name must arrive within this long, or the DNS map is consulted.
     static let dnsFallbackAfter = 3.0
@@ -111,6 +112,10 @@ struct FlowNamer: Sendable {
     static let flowCapacity = 4096
     /// The most handshake bytes buffered for one flow, TCP or QUIC.
     static let bufferLimit = 16_384
+    /// How long a DNS query this Mac sent is held for its reply (ADR-0006).
+    static let queryAwaited = 10.0
+    /// The most queries held; the oldest goes first.
+    static let queryCapacity = 1024
 
     private struct Flow {
         var start: Double
@@ -143,6 +148,8 @@ struct FlowNamer: Sendable {
     /// The capture interface's hardware address, on a link whose frames carry one.
     private var hardwareAddress: [UInt8]?
     private var dnsMap = DNSMap()
+    /// This Mac's DNS queries still waiting for a reply.
+    private var queries = AwaitedQueries()
     private var flows: [FlowKey: Flow] = [:]
     private var flowOrder = ArrivalOrder<FlowKey>()
 
@@ -177,6 +184,7 @@ struct FlowNamer: Sendable {
 
     var flowCount: Int { flows.count }
     var dnsCount: Int { dnsMap.count }
+    var queryCount: Int { queries.count }
 
     /// The packet goes to a public address from one this namer does not know as ours:
     /// the address set is stale, since this Mac sees no other host's traffic. Wi-Fi
@@ -211,10 +219,25 @@ struct FlowNamer: Sendable {
         let outbound = local.contains(p.src)
         guard !outbound || isFromInterface(p) else { return [] }
         if p.proto == .udp && p.srcPort == 53 && !outbound {
-            // Only an answer from a resolver this Mac asks, sent to this Mac, may name
-            // addresses: any host on the network can broadcast a reply.
-            if resolvers.contains(p.src), local.contains(p.dst), let reply = DNS.parseReply(p.payload) {
-                for address in reply.addresses { dnsMap.insert(reply.name, for: address, at: ts) }
+            // Only an answer to a query this Mac sent may name addresses (ADR-0006): from
+            // the resolver that was asked, to the port that asked, under the query's id and
+            // repeating its question. Any host on the network can write a resolver's address
+            // on a reply, so one that answers nothing is dropped on its first two bytes,
+            // before it is parsed.
+            if resolvers.contains(p.src), local.contains(p.dst), let id = DNS.transactionID(p.payload) {
+                let key = AwaitedQueries.Key(resolver: p.src, port: p.dstPort, id: id)
+                if queries.awaits(key, sentAfter: ts - Self.queryAwaited), let reply = DNS.parseReply(p.payload),
+                   queries.take(key, asking: reply.question) {
+                    for address in reply.addresses { dnsMap.insert(reply.name, for: address, at: ts) }
+                }
+            }
+            return []
+        }
+        if p.proto == .udp && p.dstPort == 53 && outbound {
+            // This Mac's query to one of its resolvers, held until its reply comes. It opens
+            // no flow, whatever its bytes look like: a query's id can pass for a QUIC header.
+            if resolvers.contains(p.dst), let query = DNS.parseQuery(p.payload) {
+                queries.insert(query.question, for: AwaitedQueries.Key(resolver: p.dst, port: p.srcPort, id: query.id), at: ts)
             }
             return []
         }
@@ -266,8 +289,6 @@ struct FlowNamer: Sendable {
                 return flow.dnsNamed ? events : events + [FlowEvent(key: key, kind: .unnamed(.gap))]
             }
         case .udp:
-            // A DNS query can look like anything; replies are read above.
-            guard p.dstPort != 53 else { return [] }
             let datagram = Array(p.payload)
             var events: [FlowEvent] = []
             if var flow = flows[key], !(flow.finished && Self.startsNewConnection(datagram, after: flow)) {
@@ -418,6 +439,7 @@ struct FlowNamer: Sendable {
             }
         }
         dnsMap.forget(arrivedBy: now - Self.dnsRemembered)
+        queries.forget(sentBy: now - Self.queryAwaited)
         return events
     }
 
@@ -472,6 +494,58 @@ private struct DNSMap {
         guard let address = order.oldest(in: entries, serial: { $0.serial }) else { return false }
         if let cutoff, entries[address]!.at > cutoff { return false }
         entries[address] = nil
+        order.removeOldest()
+        return true
+    }
+}
+
+/// DNS queries this Mac sent and has no reply to yet, by what a reply must repeat: who was
+/// asked, from which port, under which id, and the question. A query is here for that match
+/// alone: taken out by its reply, or once older than `FlowNamer.queryAwaited`, and never
+/// more of them than `FlowNamer.queryCapacity`, the oldest going first.
+private struct AwaitedQueries {
+    struct Key: Hashable, Sendable {
+        let resolver: IPAddress
+        let port: UInt16
+        let id: UInt16
+    }
+
+    private var entries: [Key: (question: DNS.Question, at: Double, serial: Int)] = [:]
+    private var order = ArrivalOrder<Key>()
+
+    var count: Int { entries.count }
+
+    mutating func insert(_ question: DNS.Question, for key: Key, at ts: Double) {
+        entries[key] = (question, ts, order.append(key))
+        while entries.count > FlowNamer.queryCapacity { dropOldest(sentBy: nil) }
+        order.sweep(capacity: FlowNamer.queryCapacity, in: entries, serial: { $0.serial })
+    }
+
+    /// Whether a query is waiting under `key`, sent after `cutoff`: asked before the reply
+    /// is parsed, so a reply nobody is waiting for costs one lookup.
+    func awaits(_ key: Key, sentAfter cutoff: Double) -> Bool {
+        entries[key].map { $0.at > cutoff } ?? false
+    }
+
+    /// Takes the query under `key` out if `question` is what it asked. A reply to another
+    /// question leaves it waiting for its own.
+    mutating func take(_ key: Key, asking question: DNS.Question) -> Bool {
+        guard entries[key]?.question == question else { return false }
+        entries[key] = nil
+        return true
+    }
+
+    mutating func forget(sentBy cutoff: Double) {
+        while dropOldest(sentBy: cutoff) {}
+    }
+
+    /// Removes the oldest query, if it was sent by `cutoff` (or at all, for nil). False when
+    /// nothing was removed.
+    @discardableResult
+    private mutating func dropOldest(sentBy cutoff: Double?) -> Bool {
+        guard let key = order.oldest(in: entries, serial: { $0.serial }) else { return false }
+        if let cutoff, entries[key]!.at > cutoff { return false }
+        entries[key] = nil
         order.removeOldest()
         return true
     }

@@ -32,6 +32,22 @@ final class FlowNamerTests: XCTestCase {
         return udp(from: resolver, to: me, srcPort: 53, dstPort: 60000, bytes)
     }
 
+    /// The query a reply answers, as this Mac sent it: the reply's id and question, from the
+    /// address and port the reply goes to, to port 53 of the host it comes from.
+    static func query(answeredBy reply: Packet) -> Packet {
+        let bytes = Array(reply.payload)
+        var end = 12
+        while bytes[end] != 0 { end += 1 + Int(bytes[end]) }
+        let message = bytes[0..<2] + [0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0] + bytes[12..<(end + 5)]
+        return Packet(src: reply.dst, dst: reply.src, srcPort: reply.dstPort, dstPort: 53, proto: .udp, tcpFlags: 0, tcpSeq: 0, payload: message[...])
+    }
+
+    /// This Mac asks, and `reply` answers.
+    private func answer(_ reply: Packet, _ n: inout FlowNamer, at time: Double) {
+        _ = n.observe(Self.query(answeredBy: reply), at: time)
+        _ = n.observe(reply, at: time)
+    }
+
     func testTCPHandshakeOverTwoSegmentsNamesTheFlow() {
         var n = namer()
         XCTAssertEqual(n.observe(tcp(flags: 0x02, seq: 1000), at: t0), [FlowEvent(key: tcpKey, kind: .opened)])
@@ -351,7 +367,8 @@ final class FlowNamerTests: XCTestCase {
 
     func testDNSFallbackAfterThreeSecondsOnlyWhenNothingElseNamed() {
         var n = namer()
-        XCTAssertEqual(n.observe(dnsReply, at: t0), [], "a reply updates the map and says nothing")
+        XCTAssertEqual(n.observe(Self.query(answeredBy: dnsReply), at: t0), [], "a query says nothing")
+        XCTAssertEqual(n.observe(dnsReply, at: t0), [], "its reply updates the map and says nothing")
         XCTAssertEqual(n.dnsCount, 1)
         _ = n.observe(tcp(flags: 0x02, seq: 1), at: t0 + 1)
         XCTAssertEqual(n.expire(now: t0 + 3), [], "the wire gets three seconds first")
@@ -364,7 +381,7 @@ final class FlowNamerTests: XCTestCase {
     /// replace the DNS name with "no complete handshake".
     func testAWireNameAfterTheDNSFallbackReplacesIt() {
         var n = namer()
-        _ = n.observe(dnsReply, at: t0)
+        answer(dnsReply, &n, at: t0)
         _ = n.observe(tcp(flags: 0x02, seq: 1000), at: t0 + 1)
         XCTAssertEqual(n.expire(now: t0 + 4.5), [FlowEvent(key: tcpKey, kind: .named("cdn.example.net", .dns))])
         XCTAssertEqual(n.observe(tcp(flags: 0x18, seq: 1001, clientHelloRecord), at: t0 + 6),
@@ -372,13 +389,13 @@ final class FlowNamerTests: XCTestCase {
         XCTAssertEqual(n.expire(now: t0 + 1 + FlowNamer.finalizeAfter), [])
 
         var silent = namer()
-        _ = silent.observe(dnsReply, at: t0)
+        answer(dnsReply, &silent, at: t0)
         _ = silent.observe(tcp(flags: 0x02, seq: 1000), at: t0 + 1)
         _ = silent.expire(now: t0 + 4.5)
         XCTAssertEqual(silent.expire(now: t0 + 1 + FlowNamer.finalizeAfter), [], "the DNS name stands")
 
         var garbage = namer()
-        _ = garbage.observe(dnsReply, at: t0)
+        answer(dnsReply, &garbage, at: t0)
         _ = garbage.observe(tcp(flags: 0x02, seq: 1000), at: t0 + 1)
         _ = garbage.expire(now: t0 + 4.5)
         XCTAssertEqual(garbage.observe(tcp(flags: 0x18, seq: 1001, [0x53, 0x53, 0x48]), at: t0 + 6), [], "a failure on the wire does not replace the DNS name")
@@ -402,6 +419,106 @@ final class FlowNamerTests: XCTestCase {
     }
 
     private func named(after reply: Packet, _ n: inout FlowNamer) -> FlowEvent.Kind? {
+        answer(reply, &n, at: t0)
+        _ = n.observe(tcp(port: 22, flags: 0x02, seq: 1), at: t0)
+        return n.expire(now: t0 + FlowNamer.dnsFallbackAfter).first?.kind
+    }
+
+    /// A reply names addresses only when it answers a query this Mac sent (ADR-0006): any
+    /// host on the network can write a resolver's address on a reply, and one that saw none
+    /// of this Mac's traffic named an arbitrary address www.apple.com.
+    func testADNSReplyThatAnswersNoQueryOfThisMacsIsIgnored() {
+        func reply(id: UInt16 = 0x1234, question: String = "www.apple.com", type: UInt8 = 1, from source: IPAddress? = nil, port: UInt16 = 60000) -> Packet {
+            var bytes = Self.dnsMessage(question: question, answers: [(question, 1, peer.bytes)])
+            bytes[0] = UInt8(id >> 8)
+            bytes[1] = UInt8(id & 0xff)
+            bytes[12 + question.utf8.count + 3] = type
+            return udp(from: source ?? resolver, to: me, srcPort: 53, dstPort: port, bytes)
+        }
+        let second = IPAddress(bytes: [192, 168, 1, 2])
+        var n = FlowNamer(localAddresses: [me], resolvers: [resolver, second])
+        XCTAssertNil(named(unasked: reply(), &n), "nobody asked")
+        XCTAssertEqual(n.dnsCount, 0)
+
+        _ = n.observe(Self.query(answeredBy: reply()), at: t0)
+        XCTAssertEqual(n.queryCount, 1)
+        for (forged, why) in [(reply(id: 0x1235), "another id"), (reply(port: 60001), "another port"), (reply(from: second), "another resolver"),
+                              (reply(question: "www.other.example"), "another name"), (reply(type: 28), "another record type")] {
+            _ = n.observe(forged, at: t0 + 0.1)
+            XCTAssertEqual(n.dnsCount, 0, "a reply under \(why) than the query's")
+            XCTAssertEqual(n.queryCount, 1, "the query still waits for its own reply, after one under \(why)")
+        }
+        _ = n.observe(reply(), at: t0 + 0.2)
+        XCTAssertEqual(n.dnsCount, 1, "its own reply is taken")
+        XCTAssertEqual(n.queryCount, 0, "and the query with it")
+
+        // A second reply to the same query is one nobody is waiting for.
+        var again = namer()
+        answer(reply(question: "first.example"), &again, at: t0)
+        var late = Self.dnsMessage(question: "first.example", answers: [("first.example", 1, [203, 0, 113, 9])])
+        late[0] = 0x12
+        late[1] = 0x34
+        _ = again.observe(udp(from: resolver, to: me, srcPort: 53, dstPort: 60000, late), at: t0 + 0.1)
+        XCTAssertEqual(again.dnsCount, 1, "the second reply's address is not taken")
+    }
+
+    /// A query is held for the match and no longer: until its reply, or ten seconds, and
+    /// never more than the cap. Only this Mac's queries to its resolvers are held at all.
+    func testAQueryIsHeldOnlyUntilItsReplyOrTenSeconds() {
+        var n = namer()
+        _ = n.observe(Self.query(answeredBy: dnsReply), at: t0)
+        XCTAssertEqual(n.queryCount, 1)
+        _ = n.expire(now: t0 + FlowNamer.queryAwaited - 1)
+        XCTAssertEqual(n.queryCount, 1, "still waiting")
+        _ = n.expire(now: t0 + FlowNamer.queryAwaited)
+        XCTAssertEqual(n.queryCount, 0, "forgotten unanswered")
+        _ = n.observe(dnsReply, at: t0 + FlowNamer.queryAwaited + 1)
+        XCTAssertEqual(n.dnsCount, 0, "a reply after that answers nothing")
+
+        // The pass that forgets runs once a second; a reply that beats it is still too late.
+        var slow = namer()
+        _ = slow.observe(Self.query(answeredBy: dnsReply), at: t0)
+        _ = slow.observe(dnsReply, at: t0 + FlowNamer.queryAwaited + 0.5)
+        XCTAssertEqual(slow.dnsCount, 0)
+
+        var others = namer()
+        let elsewhere = IPAddress(bytes: [9, 9, 9, 9])
+        _ = others.observe(Self.query(answeredBy: udp(from: elsewhere, to: me, srcPort: 53, dstPort: 60000, Array(dnsReply.payload))), at: t0)
+        XCTAssertEqual(others.queryCount, 0, "a query to a server that is not this Mac's resolver")
+        _ = others.observe(Self.query(answeredBy: udp(from: resolver, to: IPAddress(bytes: [192, 168, 1, 6]), srcPort: 53, dstPort: 60000, Array(dnsReply.payload))), at: t0)
+        XCTAssertEqual(others.queryCount, 0, "another host's query")
+        XCTAssertEqual(others.observe(Self.query(answeredBy: dnsReply), at: t0), [], "a query opens no flow")
+        XCTAssertEqual(others.flowCount, 0)
+
+        // On Ethernet a query under this Mac's address from another host's hardware address
+        // is not this Mac's, and does not make a reply expected.
+        var wired = FlowNamer(localAddresses: [me], resolvers: [resolver], hardwareAddress: [2, 0, 0, 0, 0, 5])
+        var forged = Self.query(answeredBy: dnsReply)
+        forged.linkSource = [2, 0, 0, 0, 0, 9][...]
+        _ = wired.observe(forged, at: t0)
+        XCTAssertEqual(wired.queryCount, 0)
+        var reply = dnsReply
+        reply.linkSource = [2, 0, 0, 0, 0, 9][...]
+        _ = wired.observe(reply, at: t0)
+        XCTAssertEqual(wired.dnsCount, 0)
+
+        var many = namer()
+        func numbered(_ id: Int) -> Packet {
+            var bytes = Array(dnsReply.payload)
+            bytes[0] = UInt8(id >> 8)
+            bytes[1] = UInt8(id & 0xff)
+            return udp(from: resolver, to: me, srcPort: 53, dstPort: 60000, bytes)
+        }
+        let total = FlowNamer.queryCapacity + 10
+        for id in 0..<total { _ = many.observe(Self.query(answeredBy: numbered(id)), at: t0 + Double(id) / 1000) }
+        XCTAssertEqual(many.queryCount, FlowNamer.queryCapacity, "the oldest go first")
+        _ = many.observe(numbered(0), at: t0 + 2)
+        XCTAssertEqual(many.dnsCount, 0, "the first query sent is no longer held")
+        _ = many.observe(numbered(total - 1), at: t0 + 2)
+        XCTAssertEqual(many.dnsCount, 1, "the last one is")
+    }
+
+    private func named(unasked reply: Packet, _ n: inout FlowNamer) -> FlowEvent.Kind? {
         _ = n.observe(reply, at: t0)
         _ = n.observe(tcp(port: 22, flags: 0x02, seq: 1), at: t0)
         return n.expire(now: t0 + FlowNamer.dnsFallbackAfter).first?.kind
@@ -467,8 +584,8 @@ final class FlowNamerTests: XCTestCase {
         }
         let total = FlowNamer.dnsCapacity + 10
         for i in 0..<total {
-            _ = n.observe(reply(i), at: t0 + Double(i) / 10_000)
-            if i == FlowNamer.dnsCapacity / 2 { _ = n.observe(reply(0), at: t0 + Double(i) / 10_000) }
+            answer(reply(i), &n, at: t0 + Double(i) / 10_000)
+            if i == FlowNamer.dnsCapacity / 2 { answer(reply(0), &n, at: t0 + Double(i) / 10_000) }
         }
         XCTAssertEqual(n.dnsCount, FlowNamer.dnsCapacity)
         for (i, port) in [(0, UInt16(1)), (1, 2), (total - 1, 3)] {
@@ -510,7 +627,7 @@ final class FlowNamerTests: XCTestCase {
         func packet(_ port: UInt16, to dst: IPAddress, flags: UInt8 = 0x02, seq: UInt32 = 1, _ payload: [UInt8] = []) -> Packet {
             Packet(src: me, dst: dst, srcPort: port, dstPort: 443, proto: .tcp, tcpFlags: flags, tcpSeq: seq, payload: payload[...])
         }
-        _ = n.observe(dnsReply, at: t0)
+        answer(dnsReply, &n, at: t0)
         _ = n.observe(packet(1000, to: peer), at: t0)
         _ = n.observe(packet(1001, to: unknown), at: t0)
         _ = n.observe(packet(1002, to: unknown), at: t0)
@@ -538,7 +655,7 @@ final class FlowNamerTests: XCTestCase {
         }
         let hello = SnifferParserTests.clientHello(sni: Array("example.org".utf8))
         let half = hello.count / 2
-        _ = n.observe(dnsReply, at: t0)
+        answer(dnsReply, &n, at: t0)
         _ = n.observe(packet(1000, to: peer), at: t0)
         _ = n.observe(packet(1001, to: unknown), at: t0)
         _ = n.observe(packet(1001, to: unknown, flags: 0x18, seq: 2, Array(clientHelloRecord.prefix(50))), at: t0)
@@ -556,7 +673,7 @@ final class FlowNamerTests: XCTestCase {
 
     func testOneAnswerRepeatedStaysOneEntryAndIsStillForgotten() {
         var n = namer()
-        for i in 0..<(3 * FlowNamer.dnsCapacity) { _ = n.observe(dnsReply, at: t0 + Double(i) / 10_000) }
+        for i in 0..<(3 * FlowNamer.dnsCapacity) { answer(dnsReply, &n, at: t0 + Double(i) / 10_000) }
         XCTAssertEqual(n.dnsCount, 1)
         _ = n.expire(now: t0 + 2 + FlowNamer.dnsRemembered)
         XCTAssertEqual(n.dnsCount, 0)
@@ -566,7 +683,7 @@ final class FlowNamerTests: XCTestCase {
         var n = namer()
         _ = n.observe(tcp(flags: 0x02, seq: 1), at: t0)
         XCTAssertEqual(n.expire(now: t0 + 4), [], "nothing in the map")
-        _ = n.observe(dnsReply, at: t0 + 5)
+        answer(dnsReply, &n, at: t0 + 5)
         XCTAssertEqual(n.expire(now: t0 + 6), [], "a reply arriving after the fallback ran does not rename")
         _ = n.expire(now: t0 + 5 + FlowNamer.dnsRemembered)
         XCTAssertEqual(n.dnsCount, 0)

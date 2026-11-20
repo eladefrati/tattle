@@ -20,12 +20,15 @@ Every surface runs the same pipeline on a different source:
   (`net.inet.tcp.pcblist_n`, `net.inet.udp.pcblist_n`) that `netstat -anv` reads.
 - Bytes in and out per interface, from `getifaddrs`, for the menu bar and the resources
   line. There are no per-process byte counts.
-- A BPF sniffer that reads four things and nothing else: DNS replies on port 53, to build
-  an IP-to-name map; the TLS ClientHello on TCP, for the Server Name Indication; the QUIC
+- A BPF sniffer that reads five things and nothing else: this Mac's DNS queries on port 53
+  and the replies to them, to build an IP-to-name map from the replies that answer a query;
+  the TLS ClientHello on TCP, for the Server Name Indication; the QUIC
   Initial packet, which carries the same ClientHello under a key derivable from the packet
   itself; and the Host header of a plaintext HTTP request. A name from the wire wins; the DNS map is a fallback
-  ([ADR-0001](adr/0001-sniffer-coverage.md)). The sniffer gets its capture descriptor from
-  the broker (Privileges).
+  ([ADR-0001](adr/0001-sniffer-coverage.md)). A query is held in memory until its reply
+  comes, ten seconds at most, and is never shown, logged or stored
+  ([ADR-0006](adr/0006-dns-replies-matched-to-queries.md)). The sniffer gets its
+  capture descriptor from the broker (Privileges).
 
 ### Processes
 

@@ -77,11 +77,13 @@ final class SnifferParserFuzzTests: XCTestCase {
             ("ClientHello in two records", record(Array(hello[..<50])) + record(Array(hello[50...]))),
             ("QUIC Initial", SnifferParserTests.rfcInitial),
             ("CRYPTO frame", SnifferParserTests.rfcCryptoFrame),
+            ("DNS query", SnifferParserTests.query),
             ("DNS reply", reply),
             ("HTTP request", http),
             ("Ethernet SYN", ethernet(ipv4(from: me, to: remote, proto: 6, tcp(from: 50000, to: 443, seq: 1, flags: 0x02, [])))),
             ("Ethernet ClientHello", ethernet(ipv4(from: me, to: remote, proto: 6, tcp(from: 50000, to: 443, seq: 2, flags: 0x18, record(hello))))),
             ("Ethernet QUIC Initial", ethernet(ipv4(from: me, to: remote, proto: 17, udp(from: 50001, to: 443, SnifferParserTests.rfcInitial)))),
+            ("Ethernet DNS query", ethernet(ipv4(from: me, to: resolver, proto: 17, udp(from: 50002, to: 53, [0x12, 0x34] + SnifferParserTests.query.dropFirst(2))))),
             ("Ethernet DNS reply", ethernet(ipv4(from: resolver, to: me, proto: 17, udp(from: 53, to: 50002, reply)), from: [0x02, 0, 0, 0, 0, 0x01])),
             ("null link IPv6 HTTP request", [30, 0, 0, 0] + ipv6(from: me6, to: remote6, proto: 6, tcp(from: 50003, to: 80, seq: 2, flags: 0x18, http))),
             ("raw IPv6 QUIC Initial", ipv6(from: me6, to: remote6, proto: 17, udp(from: 50004, to: 443, SnifferParserTests.rfcInitial))),
@@ -95,6 +97,8 @@ final class SnifferParserFuzzTests: XCTestCase {
         _ = TLS.clientHelloFromRecords(bytes)
         _ = HTTP.request(bytes[...])
         _ = DNS.parseReply(bytes[...])
+        _ = DNS.parseQuery(bytes[...])
+        _ = DNS.transactionID(bytes[...])
         _ = HostName(bytes)
         _ = HostName(bytes, allowingPort: true)
         _ = QUIC.mayBeClientInitial(bytes)

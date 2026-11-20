@@ -5,9 +5,10 @@ import Foundation
 ///
 /// - outbound TCP SYNs and outbound TCP segments carrying payload (the ClientHello,
 ///   the HTTP request line);
-/// - outbound UDP datagrams that can be a QUIC client Initial: not to port 53, at least
-///   1200 bytes of payload, first byte a long header with the fixed bit;
-/// - inbound UDP from port 53 (DNS replies).
+/// - outbound UDP datagrams that can be a QUIC client Initial: at least 1200 bytes of
+///   payload, first byte a long header with the fixed bit;
+/// - outbound UDP to port 53 (this Mac's DNS queries) and inbound UDP from port 53 (the
+///   replies, which are taken only when they answer one of those queries).
 ///
 /// Outbound is told from the interface's own hardware address on Ethernet, and from the
 /// interface's addresses on links without one. Fragments other than the first are dropped;
@@ -86,7 +87,7 @@ struct CaptureFilter: Equatable, Sendable {
         a.mark(v4udp)
         a.loadXHeaderLength(at: L)
         a.loadHalfIndexed(at: L + 2)  // UDP destination port
-        a.jumpIfEqual(53, drop, else: nil)
+        a.jumpIfEqual(53, accept, else: nil)
         a.loadHalfIndexed(at: L + 4)  // UDP length
         emitInitialCheck(&a, firstByte: { $0.loadByteIndexed(at: L + 8) }, accept: accept, drop: drop)
         a.mark(v4in)
@@ -113,7 +114,7 @@ struct CaptureFilter: Equatable, Sendable {
         emitPayloadCheck(&a, accept: accept, drop: drop)
         a.mark(v6udp)
         a.loadHalf(at: L + 40 + 2)
-        a.jumpIfEqual(53, drop, else: nil)
+        a.jumpIfEqual(53, accept, else: nil)
         a.loadHalf(at: L + 40 + 4)
         emitInitialCheck(&a, firstByte: { $0.loadByte(at: L + 40 + 8) }, accept: accept, drop: drop)
         a.mark(v6in)

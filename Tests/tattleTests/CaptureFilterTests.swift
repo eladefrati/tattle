@@ -85,9 +85,9 @@ final class CaptureFilterTests: XCTestCase {
         // Outbound UDP: a client Initial kept, short header and other UDP dropped.
         XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 443, payload: initial)))), snap)
         XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 443, payload: [0x41, 1, 2, 3])))), 0)
-        XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 53, payload: [0x12, 0x34, 0x01, 0x00])))), 0, "a DNS query is not needed")
+        XCTAssertEqual(run(ethernet(from: mac, ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 50000, destinationPort: 53, payload: [0x12, 0x34, 0x01, 0x00])))), snap, "a DNS query, which its reply is matched to")
         XCTAssertEqual(run(ethernet(from: mac, ipv6(from: myV6, to: peerV6, proto: 17, udp(sourcePort: 50000, destinationPort: 443, payload: initial)))), snap)
-        // Only a client Initial: long header with the fixed bit, at least 1200 bytes, not to DNS.
+        // Only a client Initial, long header with the fixed bit, at least 1200 bytes, or a DNS query.
         var rtp = initial
         rtp[0] = 0x80
         for family in [4, 6] {
@@ -97,7 +97,12 @@ final class CaptureFilterTests: XCTestCase {
             }
             XCTAssertEqual(out(5004, rtp), 0, "RTP, IPv\(family)")
             XCTAssertEqual(out(443, Array(initial.prefix(1199))), 0, "too small for a client Initial, IPv\(family)")
-            XCTAssertEqual(out(53, initial), 0, "a DNS query, IPv\(family)")
+            XCTAssertEqual(out(53, initial), snap, "a DNS query, whatever it holds, IPv\(family)")
+            XCTAssertEqual(out(53, SnifferParserTests.query), snap, "a DNS query, IPv\(family)")
+            XCTAssertEqual(out(5353, SnifferParserTests.query), 0, "not to port 53, IPv\(family)")
+            let inbound = udp(sourcePort: 50000, destinationPort: 53, payload: SnifferParserTests.query)
+            XCTAssertEqual(run(ethernet(from: otherMac, family == 4 ? ipv4(from: peerV4, to: myV4, proto: 17, inbound) : ipv6(from: peerV6, to: myV6, proto: 17, inbound))), 0,
+                           "another host's query, IPv\(family)")
         }
 
         // Inbound UDP: only replies from port 53.
@@ -122,6 +127,8 @@ final class CaptureFilterTests: XCTestCase {
         let initial = SnifferParserTests.sealInitial([0x06, 0x00, 0x40 | UInt8(hello.count >> 8), UInt8(hello.count & 0xff)] + hello)
         let reply: [UInt8] = [0x12, 0x34, 0x81, 0x80, 0, 1, 0, 1, 0, 0, 0, 0, 3, 0x63, 0x64, 0x6e, 7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 3, 0x6e, 0x65, 0x74, 0, 0, 1, 0, 1,
                               0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 0x3c, 0, 4] + peerV4
+        // The query that reply answers: cdn.example.net's A record, under the same id.
+        let query: [UInt8] = [0x12, 0x34, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0, 3, 0x63, 0x64, 0x6e, 7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 3, 0x6e, 0x65, 0x74, 0, 0, 1, 0, 1]
         let resolverV6: [UInt8] = [0xfd, 0] + [UInt8](repeating: 0, count: 13) + [1]
         for (family, me, peer, resolver) in [(4, myV4, peerV4, [192, 168, 1, 1]), (6, myV6, peerV6, resolverV6)] {
             func ip(from src: [UInt8], to dst: [UInt8], _ datagram: [UInt8]) -> [UInt8] {
@@ -146,9 +153,22 @@ final class CaptureFilterTests: XCTestCase {
             XCTAssertEqual(try read(forgedReply, by: &namer), [], "IPv\(family)")
             XCTAssertEqual(namer.dnsCount, 0, "IPv\(family): nor is it a reply from this Mac's own resolver")
 
+            // A query under this Mac's address from another host does not make a reply expected.
+            let forgedQuery = ethernet(from: otherMac, to: mac, ip(from: me, to: resolver, udp(sourcePort: 60000, destinationPort: 53, payload: query)))
+            XCTAssertEqual(Interpreter.run(filter, on: forgedQuery), 0, "IPv\(family): the filter drops it")
+            XCTAssertEqual(namer.observe(try XCTUnwrap(Packet.parse(forgedQuery, dlt: PacketCapture.linkEthernet)), at: 1_700_000_000), [], "IPv\(family)")
+            XCTAssertEqual(namer.queryCount, 0, "IPv\(family): and with no filter the namer does not hold it")
+
             let answered = ethernet(from: otherMac, to: mac, ip(from: resolver, to: me, udp(sourcePort: 53, destinationPort: 60000, payload: reply)))
             XCTAssertEqual(try read(answered, by: &namer), [], "IPv\(family)")
-            XCTAssertEqual(namer.dnsCount, 1, "IPv\(family): the resolver's reply is remembered")
+            XCTAssertEqual(namer.dnsCount, 0, "IPv\(family): a reply this Mac did not ask for")
+
+            let asked = ethernet(from: mac, ip(from: me, to: resolver, udp(sourcePort: 60000, destinationPort: 53, payload: query)))
+            XCTAssertEqual(try read(asked, by: &namer), [], "IPv\(family)")
+            XCTAssertEqual(namer.queryCount, 1, "IPv\(family): this Mac's query is held")
+            XCTAssertEqual(try read(answered, by: &namer), [], "IPv\(family)")
+            XCTAssertEqual(namer.dnsCount, 1, "IPv\(family): the resolver's reply to it is remembered")
+            XCTAssertEqual(namer.queryCount, 0, "IPv\(family): and the query let go")
 
             let sent = ethernet(from: mac, ip(from: me, to: peer, udp(sourcePort: 50000, destinationPort: 443, payload: initial)))
             let key = FlowKey(proto: .udp, localPort: 50000, remote: IPAddress(bytes: peer), remotePort: 443)
@@ -166,6 +186,9 @@ final class CaptureFilterTests: XCTestCase {
         XCTAssertEqual(run(nullLink(ipv4(from: peerV4, to: myV4, proto: 6, tcp(flags: 0x18, payload: 1400)))), 0, "inbound payload dropped")
         XCTAssertEqual(run(nullLink(ipv4(from: peerV4, to: myV4, proto: 17, udp(sourcePort: 53, destinationPort: 5000, payload: [1, 2, 3, 4])))), snap)
         XCTAssertEqual(run(nullLink(ipv6(from: myV6, to: peerV6, proto: 17, udp(sourcePort: 5000, destinationPort: 443, payload: initial)))), snap)
+        XCTAssertEqual(run(nullLink(ipv4(from: myV4, to: peerV4, proto: 17, udp(sourcePort: 5000, destinationPort: 53, payload: SnifferParserTests.query)))), snap, "this Mac's DNS query")
+        XCTAssertEqual(run(nullLink(ipv6(from: myV6, to: peerV6, proto: 17, udp(sourcePort: 5000, destinationPort: 53, payload: SnifferParserTests.query)))), snap)
+        XCTAssertEqual(run(nullLink(ipv4(from: peerV4, to: myV4, proto: 17, udp(sourcePort: 5000, destinationPort: 53, payload: SnifferParserTests.query)))), 0, "another host's")
         XCTAssertEqual(run(nullLink(ipv6(from: peerV6, to: myV6, proto: 6, tcp(flags: 0x18, payload: 1400)))), 0)
         // Another address of ours that the filter was not told about looks inbound: dropped.
         XCTAssertEqual(run(nullLink(ipv4(from: [10, 0, 0, 9], to: peerV4, proto: 6, tcp(flags: 0x02, payload: 0)))), 0)

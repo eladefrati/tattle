@@ -1,8 +1,22 @@
 import Foundation
 
 enum DNS {
+    /// What a query asks, and what its reply repeats.
+    struct Question: Equatable, Sendable {
+        let name: String
+        let type: UInt16
+        let qclass: UInt16
+    }
+
+    struct Query {
+        let id: UInt16
+        let question: Question
+    }
+
     struct Reply {
-        let name: String  // the question name: what the application asked for
+        let id: UInt16
+        let question: Question
+        var name: String { question.name }  // the question name: what the application asked for
         /// Addresses of records owned by the question name or by a CNAME target reached
         /// from it. Records for other names are dropped: a server answering for its own name
         /// can add records for anyone else's.
@@ -15,12 +29,38 @@ enum DNS {
     /// capture holds, walk 860.
     private static let walkLimit = 1024
 
+    /// The transaction id, which a reply repeats from its query: enough to tell a reply
+    /// nobody is waiting for without reading the rest of it.
+    static func transactionID(_ payload: ArraySlice<UInt8>) -> UInt16? {
+        guard payload.count >= 2 else { return nil }
+        return UInt16(payload[payload.startIndex]) << 8 | UInt16(payload[payload.startIndex + 1])
+    }
+
+    /// A standard query with one question, as a resolver's client sends it. Whatever
+    /// follows the question (an EDNS record) is not read.
+    static func parseQuery(_ payload: ArraySlice<UInt8>) -> Query? {
+        let bytes = Array(payload)
+        var r = ByteReader(bytes)
+        var walk = walkLimit
+        do {
+            let id = try r.u16()
+            let flags = try r.u16()
+            guard flags & 0xf800 == 0 else { return nil }  // a query, and a standard one
+            guard try r.u16() == 1 else { return nil }
+            try r.skip(6)
+            guard let name = try readName(bytes, &r, &walk) else { return nil }
+            return Query(id: id, question: Question(name: name.text, type: try r.u16(), qclass: try r.u16()))
+        } catch {
+            return nil
+        }
+    }
+
     static func parseReply(_ payload: ArraySlice<UInt8>) -> Reply? {
         let bytes = Array(payload)
         var r = ByteReader(bytes)
         var walk = walkLimit
         do {
-            try r.skip(2)
+            let id = try r.u16()
             let flags = try r.u16()
             guard flags & 0x8000 != 0 else { return nil }  // responses only
             let questions = Int(try r.u16())
@@ -29,7 +69,7 @@ enum DNS {
             // A resolver answers one question, and RFC 9619 makes more a malformed message.
             guard questions == 1 else { return nil }
             guard let qname = try readName(bytes, &r, &walk) else { return nil }
-            try r.skip(4)
+            let question = Question(name: qname.text, type: try r.u16(), qclass: try r.u16())
             var records: [(owner: String, address: IPAddress)] = []
             var aliases: [String: [String]] = [:]
             for _ in 0..<answers {
@@ -56,7 +96,7 @@ enum DNS {
             while let name = queue.popLast() {
                 for alias in aliases[name] ?? [] where reached.insert(alias).inserted { queue.append(alias) }
             }
-            return Reply(name: qname.text, addresses: records.filter { reached.contains($0.owner) }.map(\.address))
+            return Reply(id: id, question: question, addresses: records.filter { reached.contains($0.owner) }.map(\.address))
         } catch {
             return nil
         }

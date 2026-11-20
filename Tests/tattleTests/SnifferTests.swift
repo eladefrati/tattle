@@ -181,11 +181,22 @@ final class SnifferTests: XCTestCase {
                               onEvents: { new in events.withLock { $0 += new } }, onStatus: { _ in })
         defer { sniffer.stop() }
         sniffer.start()
-        capture.feed([reply])
+        capture.feed([Self.query(from: mine, to: resolver), reply])
         // Opened long enough ago for the DNS fallback to be due at the next pass.
         capture.feed([Self.syn(from: mac, port: 50001)], secondsAgo: FlowNamer.dnsFallbackAfter + 1)
         _ = eventually { events.withLock { $0 }.count >= 2 }
         return events.withLock { $0 }
+    }
+
+    /// An Ethernet frame from the interface at `first`, carrying the query from `mine` to
+    /// `resolver` that `reply(from:to:)` answers.
+    private static func query(from mine: IPAddress, to resolver: IPAddress) -> [UInt8] {
+        let question: [UInt8] = [0x12, 0x34, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0, 3, 0x63, 0x64, 0x6e, 7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 3, 0x6e, 0x65, 0x74, 0, 0, 1, 0, 1]
+        let datagram: [UInt8] = [0xea, 0x60, 0, 53, 0, UInt8(8 + question.count), 0, 0] + question
+        let header: [UInt8] = resolver.isV4
+            ? [0x08, 0x00, 0x45, 0, 0, UInt8(20 + datagram.count), 0, 0, 0, 0, 64, 17, 0, 0]
+            : [0x86, 0xdd, 0x60, 0, 0, 0, 0, UInt8(datagram.count), 17, 64]
+        return other + first + header + mine.bytes + resolver.bytes + datagram
     }
 
     /// An Ethernet frame from another host to the interface at `first`, carrying a DNS reply
@@ -249,7 +260,7 @@ final class SnifferTests: XCTestCase {
         let deadline = Date().addingTimeInterval(10)
         while !named(), Date() < deadline {
             port += 1
-            capture.feed([Self.reply(from: newResolver, to: gained)])
+            capture.feed([Self.query(from: gained, to: newResolver), Self.reply(from: newResolver, to: gained)])
             // Opened long enough ago for the DNS fallback to be due at the next pass.
             capture.feed([Self.syn(from: Self.first, port: port)], secondsAgo: FlowNamer.dnsFallbackAfter + 1)
             usleep(50_000)

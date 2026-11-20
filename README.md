@@ -143,8 +143,10 @@ approval across rebuilds. To choose the identity, pass `SIGN_IDENTITY=<name>` to
 
 ### Packet access
 
-Connection names come from the first packets of each connection, which only root may
-read. **Allow packet access** in the Network tab installs the packet-access broker, a small
+Connection names come from the first packets of each connection and, as a fallback, from
+the replies to this Mac's DNS queries on port 53; only root may read them. A query is read
+only to tell which replies answer one, and is not kept. **Allow packet access** in the
+Network tab installs the packet-access broker, a small
 launch daemon that opens the capture device read-only and hands it to Tattle. The broker
 answers only a process that runs as the user who installed it, carries Tattle's signature,
 and runs with the hardened runtime. Without it, the Network tab shows addresses instead of
