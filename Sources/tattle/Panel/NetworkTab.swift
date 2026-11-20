@@ -73,6 +73,19 @@ private struct ConnectionsList: View {
     }
 }
 
+/// What a first-contact row's answer was looked up for: the destination, as the knowledge
+/// base stood. The row stays alive under a detail, so an answer kept, confirmed or forgotten
+/// there has to make it look again, or it goes on showing the answer it found before.
+struct FirstContactLookup: Hashable {
+    let key: String
+    let revision: Int
+
+    init(_ live: LiveConnection, rules: RuleStore) {
+        key = live.explainKey
+        revision = rules.revision
+    }
+}
+
 /// A connection to an address this Mac has not reached before: who opened it, where to, and
 /// what is known of the destination.
 private struct FirstContactRow: View {
@@ -103,7 +116,7 @@ private struct FirstContactRow: View {
         }
         .padding(.vertical, 7)
         .frame(minHeight: 44)
-        .task(id: live.explainKey) {
+        .task(id: FirstContactLookup(live, rules: state.rules)) {
             rule = try? await state.explainer.lookup(ExplainRequest(kind: .host, key: live.explainKey, facts: []))
         }
     }

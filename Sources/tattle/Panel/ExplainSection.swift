@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The explanation for one item, as three answers: what it is, why it is probably here, and
-/// whether to care. The knowledge base's answer, or a button that asks the model, and
-/// confirmation of an unconfirmed answer. Shared by every tab's detail view.
+/// whether to care. The knowledge base's answer, or a button that asks the model,
+/// confirmation of an unconfirmed answer, and a way to forget a kept one. Shared by every
+/// tab's detail view.
 struct ExplainSection: View {
     let request: ExplainRequest
     /// The app's own sentence that opens "Why it is probably here", from the facts.
@@ -16,6 +17,8 @@ struct ExplainSection: View {
     @State private var shown: ExplainRequest.Subject?
     @State private var busy = false
     @State private var error: String?
+    /// Forget was pressed once: the next press deletes the kept answer.
+    @State private var forgetting = false
 
     var body: some View {
         Card {
@@ -46,14 +49,29 @@ struct ExplainSection: View {
                     Spacer(minLength: 0)
                     if busy { ProgressView().controlSize(.small) }
                     if let rule {
-                        if rule.source == .llm && rule.confirmed == nil {
-                            Button("Ask again") { ask() }
+                        // A kept answer, confirmed or not: one shown only in this view has
+                        // nothing to forget, and no other rule is the user's to delete.
+                        let isKept = rule.source == .llm && rule.id != nil
+                        if forgetting && isKept {
+                            Button("Cancel") { forgetting = false }
                                 .buttonStyle(PanelButtonStyle(height: 22))
-                                .disabled(busy || !providerConfigured)
-                        }
-                        if rule.source == .llm && rule.confirmed == nil && rule.id != nil {
-                            Button("Confirm") { confirm(rule) }
-                                .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
+                            Button("Forget answer") { forget(rule) }
+                                .buttonStyle(PanelButtonStyle(kind: .danger, height: 22))
+                        } else {
+                            if isKept {
+                                Button("Forget\u{2026}") { forgetting = true }
+                                    .buttonStyle(PanelButtonStyle(height: 22))
+                                    .disabled(busy)
+                            }
+                            if rule.source == .llm && rule.confirmed == nil {
+                                Button("Ask again") { ask() }
+                                    .buttonStyle(PanelButtonStyle(height: 22))
+                                    .disabled(busy || !providerConfigured)
+                            }
+                            if rule.source == .llm && rule.confirmed == nil && rule.id != nil {
+                                Button("Confirm") { confirm(rule) }
+                                    .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
+                            }
                         }
                     } else {
                         Button("Explain") { ask() }
@@ -131,10 +149,15 @@ struct ExplainSection: View {
     }
 
     private func load() async {
+        // Another item, or other code under the name: the press was about the answer before.
+        if shown != request.subject { forgetting = false }
         shown = request.subject
         let unkept = Self.unkept(rule, givenFor: answered, request: request)
         let found = try? await state.explainer.lookup(request)
         guard !Task.isCancelled else { return }
+        // The answer the first press was about is gone or replaced: the second would be
+        // about another rule.
+        if found?.id != rule?.id { forgetting = false }
         rule = found ?? unkept
     }
 
@@ -166,6 +189,20 @@ struct ExplainSection: View {
         guard let id = rule.id else { return }
         do {
             try state.rules.confirm(id: id)
+            Task { await load() }
+        } catch {
+            self.error = describe(error)
+        }
+    }
+
+    /// Deletes the kept answer. What the knowledge base says without it shows next: a shipped
+    /// rule a confirmed answer stood before, or nothing, with the button that asks.
+    private func forget(_ rule: Rule) {
+        forgetting = false
+        do {
+            try state.rules.forget(rule)
+            self.rule = nil
+            answered = nil
             Task { await load() }
         } catch {
             self.error = describe(error)

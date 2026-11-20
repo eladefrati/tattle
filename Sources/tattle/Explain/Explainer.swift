@@ -57,8 +57,8 @@ final class Explainer {
     /// or a name only this network resolves goes out redacted, and on another network it is
     /// another device. Called
     /// only from the explain button. Throws `RuleStoreError.alreadyConfirmed`, before any model
-    /// call, when the user has confirmed the stored answer for the item: replacing it would
-    /// need a rule editor.
+    /// call, when the user has confirmed the stored answer for the item: it is asked about
+    /// again only after the user forgets that answer (`RuleStore.forget`).
     func ask(_ request: ExplainRequest) async throws -> Rule {
         var known: String?
         if let asked = request.identity { known = await stored(asked) }

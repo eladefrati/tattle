@@ -144,6 +144,18 @@ struct RuleStore: Sendable {
         }
     }
 
+    /// Deletes a kept model's answer, confirmed or not, so the item can be asked about again.
+    /// Any other rule is refused: a shipped rule's id is its row's in memory, and the file
+    /// can hold an answer under the same number. A row in the file that is not an answer is
+    /// not found.
+    func forget(_ rule: Rule) throws {
+        guard Answer.holds(rule), let id = rule.id else { throw RuleStoreError.notAnAnswer }
+        defer { wrote() }
+        try database.writer.write { db in
+            guard try Answer.rows.filter(key: id).deleteAll(db) > 0 else { throw RuleStoreError.notFound(id) }
+        }
+    }
+
     /// Deletes unconfirmed LLM rules older than their lifetime. Returns how many went.
     @discardableResult
     func pruneExpired(now: Date = Date()) throws -> Int {

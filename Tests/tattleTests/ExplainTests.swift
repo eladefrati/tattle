@@ -1014,6 +1014,29 @@ final class ExplainerTests: XCTestCase {
         XCTAssertEqual(try store.rules().first?.created, Date(timeIntervalSince1970: 500))
     }
 
+    /// A confirmed answer is never asked over. Forgotten, the item has no answer, and can be
+    /// asked about again.
+    func testAForgottenAnswerCanBeAskedAgain() async throws {
+        let provider = FakeProvider(output: #"{"purpose":"new","risk":"low","confidence":"low"}"#)
+        let explainer = explainer(provider)
+        let request = ExplainRequest(kind: .host, key: "a.example")
+        let first = try await explainer.ask(request)
+        try store.confirm(id: first.id!)
+        do {
+            _ = try await explainer.ask(request)
+            XCTFail("expected a refusal")
+        } catch {
+            XCTAssertEqual(error as? RuleStoreError, .alreadyConfirmed(first.id!))
+        }
+        try store.forget(first)
+        let none = try await explainer.lookup(request)
+        XCTAssertNil(none)
+        let again = try await explainer.ask(request)
+        XCTAssertNotNil(again.id)
+        XCTAssertNil(again.confirmed)
+        XCTAssertEqual(provider.seen.prompts.count, 2, "the refused ask sent nothing")
+    }
+
     func testSaveRefusesAnUnconfirmedRuleOverAConfirmedOneOfTheSameKey() throws {
         let kept = try store.save(Rule(kind: .host, pattern: "a.example", purpose: "mine", source: .llm, confirmed: Date()))
         XCTAssertThrowsError(try store.save(Rule(kind: .host, pattern: "a.example", purpose: "new", source: .llm))) {

@@ -37,6 +37,10 @@ connectors.
   one of Apple's installed programs; a line that does not say where its code is keeps no answer.
 - `ex-unkept`: an answer about code nothing identifies, or whose file cannot be read, shows
   with no `Confirm` and is not stored; it goes when the row comes to hold other code.
+- `ex-forget`: a kept answer, confirmed or not, has `Forget…`; pressed, it offers `Cancel`
+  and `Forget answer`, which deletes the answer. The detail then reads as it would without
+  it, and the item can be asked about again. A `First contact` row for the host follows:
+  its line names a kept answer, and loses it when the answer is forgotten.
 - `ex-host`: a host's prompt carries the host and the connection, not who made it.
 - `ex-publisher`: the shipped `claude` rule shows for Anthropic's program only.
 - `ex-planted`: a row another process wrote into the database's rule table is no rule, unless
@@ -150,6 +154,16 @@ Preconditions:
   `Explain` stores a second answer. Put `a` back: `Model answer, confirmed by you`. `$V db
   "select pattern, identity, confirmed is not null from rule where source = 'llm'"`: two
   rows, `script:<dir>/a/updater` confirmed and `script:<dir>/b/updater` not.
+- **Forgetting an answer.** With the fake provider, on the `connect named` row: `Explain`,
+  `Confirm`; the detail reads `Model answer, confirmed by you` with `Forget…` as its one
+  button. Press it: `Cancel` and `Forget answer`. `Cancel` puts `Forget…` back and `$V db
+  "select count(*) from rule where pattern = 'example.com'"` is still 1. `Forget…`, `Forget
+  answer`: `No explanation yet.` with `Explain`, and the count is 0. `Explain` again stores a
+  new unconfirmed answer, which shows `Forget…`, `Ask again` and `Confirm`. An answer that
+  was not kept (no `Confirm`) has no `Forget…`. Where the connection is a first contact (an
+  address the copy's history does not hold), its row under `First contact` reads `<terminal>
+  to example.com`; after `Explain`, `Confirm` and `Back` it also reads `Model answer,
+  confirmed by you`, and after `Forget…`, `Forget answer` and `Back` it reads as at first.
 - **Rows another process wrote.** With `sqlite3`, put rows into the copy's `rule` table and
   open the detail each would answer for. For a process and for a listener, a `builtin` or
   `user` row carrying the program's own identity, a pattern row (`builtin` `*:*` for ports,

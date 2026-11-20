@@ -157,6 +157,54 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.confirm(id: 7)) { XCTAssertEqual($0 as? RuleStoreError, .notFound(7)) }
     }
 
+    /// Forgetting deletes a kept answer, confirmed or not, and nothing else: the shipped rule a
+    /// confirmed answer stood before answers again, by the same precedence as before.
+    func testForgettingAConfirmedAnswerLeavesTheShippedRule() throws {
+        try store.replaceShipped(source: .builtin, with: [Rule(kind: .host, pattern: "a.example", purpose: "shipped", source: .builtin)])
+        let kept = try store.save(Rule(kind: .host, pattern: "a.example", purpose: "mine", source: .llm))
+        try store.confirm(id: kept.id!)
+        XCTAssertEqual(try store.lookup(kind: .host, key: "a.example")?.purpose, "mine", "confirmed, it ranks above the shipped rule")
+        let before = store.revision
+        try store.forget(kept)
+        XCTAssertEqual(try store.lookup(kind: .host, key: "a.example")?.purpose, "shipped")
+        XCTAssertGreaterThan(store.revision, before, "what was derived from the answer is stale")
+        XCTAssertNil(try store.confirmedRule(replacedBy: kept))
+
+        let unconfirmed = try store.save(Rule(kind: .host, pattern: "b.example", purpose: "guess", source: .llm))
+        try store.forget(unconfirmed)
+        XCTAssertNil(try store.lookup(kind: .host, key: "b.example"))
+        XCTAssertThrowsError(try store.forget(unconfirmed)) { XCTAssertEqual($0 as? RuleStoreError, .notFound(unconfirmed.id!)) }
+    }
+
+    /// A shipped rule's id is its row's in memory, and an answer in the file can carry the
+    /// same number: forgetting the shipped rule must not delete that answer.
+    func testForgettingARuleThatIsNotAnAnswerDeletesNothing() throws {
+        try store.replaceShipped(source: .builtin, with: [Rule(kind: .host, pattern: "a.example", purpose: "shipped", source: .builtin)])
+        let shipped = try XCTUnwrap(try store.lookup(kind: .host, key: "a.example"))
+        let answer = try store.save(Rule(kind: .host, pattern: "b.example", purpose: "mine", source: .llm))
+        XCTAssertEqual(shipped.id, answer.id, "the two tables number their rows alike")
+        XCTAssertThrowsError(try store.forget(shipped)) { XCTAssertEqual($0 as? RuleStoreError, .notAnAnswer) }
+        XCTAssertEqual(try store.lookup(kind: .host, key: "b.example")?.purpose, "mine")
+        XCTAssertEqual(try store.lookup(kind: .host, key: "a.example")?.purpose, "shipped")
+        XCTAssertThrowsError(try store.forget(Rule(kind: .host, pattern: "c.example", purpose: "unkept", source: .llm))) {
+            XCTAssertEqual($0 as? RuleStoreError, .notAnAnswer)
+        }
+    }
+
+    /// Only an answer is forgotten: a row in the file that is not one stays, as it is not read.
+    func testForgetDeletesOnlyAnAnswer() throws {
+        try store.database.writer.write { db in
+            try db.execute(sql: "INSERT INTO rule (id, kind, match, pattern, purpose, source, identity, created) VALUES (77, 'host', 'glob', '*.example', 'p', 'llm', '', datetime('now'))")
+        }
+        var pattern = Rule(kind: .host, match: .glob, pattern: "*.example", purpose: "p", source: .llm)
+        pattern.id = 77
+        XCTAssertThrowsError(try store.forget(pattern)) { XCTAssertEqual($0 as? RuleStoreError, .notAnAnswer) }
+        var claimed = pattern
+        claimed.match = .exact
+        XCTAssertThrowsError(try store.forget(claimed)) { XCTAssertEqual($0 as? RuleStoreError, .notFound(77)) }
+        XCTAssertEqual(try store.database.writer.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM rule WHERE id = 77") }, 1)
+    }
+
     func testConfirmUnknownIdThrows() {
         XCTAssertThrowsError(try store.confirm(id: 999)) { error in
             XCTAssertEqual(error as? RuleStoreError, .notFound(999))

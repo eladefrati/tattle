@@ -74,7 +74,8 @@ process, so Tattle shows every host it contacted but not which tab caused it.
    additions are pull requests against those files.
 3. **Your LLM**, only when you click **Explain** on an item. The answer is stored on your
    Mac as a rule for that item, marked unconfirmed until you click **Confirm**.
-   Unconfirmed answers expire after 45 days. Two kinds of answer are shown without being
+   Unconfirmed answers expire after 45 days. **Forget…** deletes a stored answer, confirmed
+   or not, and the item can be asked about again. Two kinds of answer are shown without being
    stored, and have no **Confirm**: one about code Tattle cannot tell from other code of
    the same name (unnamed code, or a file it cannot read), and one about a host that went
    out as a placeholder, since a private address or name is another device on another

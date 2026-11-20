@@ -618,6 +618,25 @@ final class NetworkSnapshotTests: XCTestCase {
         XCTAssertEqual(try store.history(remoteAddress: "17.1.1.1").first?.direction, .outbound)
     }
 
+    /// A first-contact row says what the knowledge base holds of its destination, and stays
+    /// alive under the detail where an answer is kept, confirmed or forgotten. Each of those
+    /// must make it look again: otherwise it goes on showing a forgotten answer.
+    func testAFirstContactRowLooksAgainWhenAnAnswerIsKeptConfirmedOrForgotten() throws {
+        let rules = try RuleStore(database: try AppDatabase.inMemory())
+        let live = LiveConnection(connection: connection(100, "203.0.113.5"), owner: ConnectionOwner(processName: "curl"), isNew: true)
+        var lookups = [FirstContactLookup(live, rules: rules)]
+        XCTAssertEqual(FirstContactLookup(live, rules: rules), lookups[0], "the same lookup until the knowledge base changes")
+        let kept = try rules.save(Rule(kind: .host, pattern: live.explainKey, purpose: "p", source: .llm))
+        lookups.append(FirstContactLookup(live, rules: rules))
+        try rules.confirm(id: try XCTUnwrap(kept.id))
+        lookups.append(FirstContactLookup(live, rules: rules))
+        try rules.forget(kept)
+        lookups.append(FirstContactLookup(live, rules: rules))
+        XCTAssertEqual(Set(lookups).count, 4, "kept, confirmed and forgotten: a new lookup each time")
+        let other = LiveConnection(connection: connection(100, "203.0.113.6"), owner: ConnectionOwner(processName: "curl"), isNew: true)
+        XCTAssertNotEqual(FirstContactLookup(other, rules: rules), lookups[3], "and another destination is another lookup")
+    }
+
     func testFirstContactCountsOnlyThisMacReachingOut() {
         var known = Set<String>()
         var accepted = connection(100, "203.0.113.5")
