@@ -196,6 +196,24 @@ final class SnifferTests: XCTestCase {
         XCTAssertTrue(eventually { opens.withLock { $0 }.count >= 2 })
         usleep(500_000)
         XCTAssertEqual(opens.withLock { $0 }, ["utun4", "en0"], "the second failure in a row waits, though the route moved again")
+
+        // No default route is not a route elsewhere: there is nothing to reopen at once, so
+        // it says the read failed and looks again after the wait, when a route may be back.
+        let gone = OSAllocatedUnfairLock(initialState: false)
+        let stranded = OSAllocatedUnfairLock<[Sniffer.Status]>(initialState: [])
+        let routeless = Sniffer(open: { _ in
+                                    gone.withLock { $0 = true }
+                                    return Failing()
+                                },
+                                host: Sniffer.Host(primaryInterface: { gone.withLock { $0 } ? nil : "utun4" }, hardwareAddress: { _ in nil },
+                                                   addresses: { _ in [Self.me] }, resolvers: { [] }, readRetryAfter: 0.3),
+                                onEvents: { _ in }, onStatus: { status in stranded.withLock { $0.append(status) } })
+        defer { routeless.stop() }
+        routeless.start()
+        XCTAssertTrue(eventually { stranded.withLock { $0 }.count >= 3 })
+        XCTAssertEqual(Array(stranded.withLock { $0 }.prefix(3)),
+                       [.capturing(interface: "utun4"), .unavailable(.read(errno: ENXIO)), .unavailable(.noInterface)],
+                       "the failed read is reported, and the missing route only after the wait")
     }
 
     /// A raw-IP capture that delivers its packets on the first read, then nothing.

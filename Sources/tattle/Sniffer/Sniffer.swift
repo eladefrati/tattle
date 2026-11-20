@@ -151,9 +151,10 @@ final class Sniffer: @unchecked Sendable {
                 // An interface that goes away fails its read, and the route is by then on
                 // another, which is opened at once, as when the route moves under a capture
                 // that still reads. Only after the first failure in a row: two interfaces
-                // failing by turns wait like one.
-                if readFailures == 1, host.primaryInterface() != interface {
-                    Log.sniffer.notice("the default route has left \(interface, privacy: .public); reopening without a wait")
+                // failing by turns wait like one. With no route at all there is nothing to
+                // open, and the wait below gives one time to come back.
+                if readFailures == 1, let current = host.primaryInterface(), current != interface {
+                    Log.sniffer.notice("the default route moved to \(current, privacy: .public); reopening without a wait")
                     continue
                 }
                 let delay = min(Self.retryAfter, host.readRetryAfter * pow(2, Double(readFailures - 1)))
