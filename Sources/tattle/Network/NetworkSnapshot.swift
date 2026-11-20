@@ -3,6 +3,9 @@ import Foundation
 /// Who made a connection, resolved once when it opens.
 struct ConnectionOwner: Equatable, Sendable {
     var processName: String
+    /// The program alone when the name is a title the process set for itself
+    /// (`ProcessEntry.program`).
+    var program: String?
     var path: String?
     /// The interpreter's file name when the process runs code that is not its executable's
     /// (`ProcessEntry.interpreter`).
@@ -25,6 +28,9 @@ struct ConnectionOwner: Equatable, Sendable {
     /// The app when there is one, else the process: what the row is filed under.
     var displayName: String { app?.name ?? processName }
     var groupID: String { app?.path ?? "process:\(processName)" }
+    /// What the row is asked about by: the Processes tab's key for the same app or program
+    /// (`ProcessGroup.explainKey`), which of a title is the program alone.
+    var explainKey: String { app?.name ?? program ?? processName }
     /// Not a signer the app's signature names, for a file in the app's bundle that the signer
     /// did not sign or that is not the code the process runs (`isForeignToApp`). A reading
     /// that names no one stays.
@@ -76,7 +82,7 @@ struct ConnectionOwner: Equatable, Sendable {
         let interpreter = entry.interpreterSignature(executable: signed)
         let appSignature = app?.signature(reading: signature)
         return ConnectionOwner(
-            processName: entry.name, path: entry.path, interpreter: entry.interpreter, app: app,
+            processName: entry.name, program: entry.program, path: entry.path, interpreter: entry.interpreter, app: app,
             signature: own, interpreterSignature: interpreter, appSignature: appSignature,
             isForeignToApp: app?.holdsForeign(entry.path, signed: interpreter ?? own, bundle: appSignature) ?? false,
             identity: entry.identity(executable: signed))
@@ -264,6 +270,10 @@ struct ConnectionGroup: Equatable, Sendable, Identifiable {
         let identities = Set(connections.map(\.owner.groupIdentity))
         return identities.count == 1 ? identities.first ?? nil : nil
     }
+
+    /// The key an answer about the row's program is asked and kept under: the newest
+    /// connection's, as the row's path is.
+    var explainKey: String { connections.first?.owner.explainKey ?? name }
 
     var newCount: Int { connections.filter(\.isNew).count }
     var remoteCount: Int { connections.filter { $0.connection.scope == .remote }.count }

@@ -217,7 +217,7 @@ struct ConnectionGroupDetail: View {
             }
             // The same key as the Processes tab, so an explanation of the program
             // given there is shown here and the other way round.
-            ExplainSection(request: ExplainRequest(kind: .process, key: group.name, facts: facts,
+            ExplainSection(request: ExplainRequest(kind: .process, key: group.explainKey, facts: facts,
                                                      isApplesProgram: group.isApplesProgram, identity: group.identity),
                            whyHere: group.whyHere(gone: gone), state: state)
             CountsCard(facts: facts.filter { !Self.headerFacts.contains($0.name) })

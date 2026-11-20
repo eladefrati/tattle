@@ -300,6 +300,30 @@ final class NetworkSnapshotTests: XCTestCase {
         XCTAssertTrue(told.isSuperset(of: ["Protocol", "Reach"]), "\(told)")
     }
 
+    /// A process that set its own title is asked about, from its Network row, by the key its
+    /// Processes row gives: the program alone. The row keeps the title.
+    func testATitledProgramsConnectionsAreExplainedByItsProgram() throws {
+        let title = "postgres: appuser payroll_prod db01.corp.example.com(54321) idle"
+        let entry = ProcessEntry(pid: 700, parentPid: 1, uid: 501, name: "postgres", path: "/opt/pg/bin/postgres", arguments: [title, ""], started: t0)
+        let owner = ConnectionOwner.resolve(pid: 700, in: [700: entry], runningApp: { _ in nil }, responsible: { _ in nil }, signature: { _ in nil })
+        XCTAssertEqual(owner.processName, title)
+        let group = try XCTUnwrap(NetworkSnapshot(connections: [LiveConnection(connection: connection(700, "203.0.113.5"), owner: owner, isNew: false)], takenAt: t0).groups.first)
+        XCTAssertEqual(group.name, title, "the row keeps the title")
+        XCTAssertEqual(group.explainKey, "postgres")
+        let processes = ProcessSnapshot.build(entries: [entry.named(signature: nil)], previous: nil, signature: { _ in nil }, responsible: { _ in nil }, takenAt: t0)
+        XCTAssertEqual(group.explainKey, processes.item(pid: 700)?.explainKey, "one answer for both tabs")
+        let sent = Prompt.build(instructions: "x", request: ExplainRequest(kind: .process, key: group.explainKey, facts: group.facts(gone: false)), redactor: .addressesOnly)
+        for word in ["appuser", "payroll_prod", "db01", "idle"] { XCTAssertFalse(sent.contains(word), sent) }
+
+        // A program with no title, and an app, are asked about by the row's name as before.
+        let curl = ConnectionOwner(processName: "curl")
+        let slack = ConnectionOwner(processName: "Slack Helper", app: AppBundle(path: "/Applications/Slack.app"))
+        for owner in [curl, slack] {
+            let group = try XCTUnwrap(NetworkSnapshot(connections: [LiveConnection(connection: connection(1, "203.0.113.5"), owner: owner, isNew: false)], takenAt: t0).groups.first)
+            XCTAssertEqual(group.explainKey, group.name)
+        }
+    }
+
     /// An answer is kept for the host and shown on connections either way: what an outbound
     /// row says of its direction stays in the panel.
     func testAnOutboundConnectionKeepsItsDirectionFromTheModel() {
