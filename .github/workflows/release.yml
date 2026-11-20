@@ -29,6 +29,7 @@ jobs:
   # gh alone.
   version:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -75,6 +76,7 @@ jobs:
   build:
     needs: version
     runs-on: macos-latest
+    timeout-minutes: 30
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -110,6 +112,7 @@ jobs:
   draft:
     needs: [version, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     env:
