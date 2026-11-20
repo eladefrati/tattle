@@ -4,7 +4,8 @@ import os
 /// Reads packets from the default route's interface on its own thread and reports flow
 /// events. Follows the interface when the default route moves; retries when the device
 /// cannot be opened, which is the state while the broker (ADR-0003) is not installed, and
-/// when a read fails, waiting longer before each reopening while reads keep failing.
+/// when a read fails: at once if the route has left the interface, and otherwise after a
+/// wait that grows while reads keep failing.
 final class Sniffer: @unchecked Sendable {
     enum Status: Equatable, Sendable {
         case stopped
@@ -24,8 +25,8 @@ final class Sniffer: @unchecked Sendable {
         var addresses: @Sendable (String) -> Set<IPAddress> = { localAddresses(of: $0) }
         var resolvers: @Sendable () -> Set<IPAddress> = { systemResolvers() }
         var interfaceCheckEvery: TimeInterval = 5
-        /// The wait before reopening after the first failed read; it doubles at each one
-        /// that follows, up to `retryAfter`.
+        /// The wait before reopening after the first failed read, where the route is still
+        /// on the interface; it doubles at each one that follows, up to `retryAfter`.
         var readRetryAfter: TimeInterval = 1
     }
 
@@ -147,6 +148,14 @@ final class Sniffer: @unchecked Sendable {
                 if Date().timeIntervalSince(opened) >= Self.retryAfter { readFailures = 0 }
                 readFailures += 1
                 guard !shouldStop() else { break }
+                // An interface that goes away fails its read, and the route is by then on
+                // another, which is opened at once, as when the route moves under a capture
+                // that still reads. Only after the first failure in a row: two interfaces
+                // failing by turns wait like one.
+                if readFailures == 1, host.primaryInterface() != interface {
+                    Log.sniffer.notice("the default route has left \(interface, privacy: .public); reopening without a wait")
+                    continue
+                }
                 let delay = min(Self.retryAfter, host.readRetryAfter * pow(2, Double(readFailures - 1)))
                 report(.unavailable(error), previous: &lastFailure)
                 Log.sniffer.notice("reopening the capture in \(delay, format: .fixed(precision: 1)) s, after \(readFailures) in a row ended in a failed read")

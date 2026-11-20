@@ -160,6 +160,44 @@ final class SnifferTests: XCTestCase {
         XCTAssertTrue(eventually(within: 2) { statuses.withLock { $0 }.last == .stopped }, "stopped within the wait")
     }
 
+    /// A read fails when its interface goes away, and the default route is by then often on
+    /// another: a wait before reopening would only miss the connections opened meanwhile.
+    /// The first failed read in a row reopens at once when the route has left the interface;
+    /// the next one waits wherever the route is, or two interfaces failing by turns would be
+    /// opened as fast as the broker answers.
+    func testAFailedReadOnAnInterfaceTheRouteHasLeftReopensAtOnce() {
+        let route = OSAllocatedUnfairLock(initialState: "utun4")
+        let statuses = OSAllocatedUnfairLock<[Sniffer.Status]>(initialState: [])
+        func host() -> Sniffer.Host {
+            Sniffer.Host(primaryInterface: { route.withLock { $0 } }, hardwareAddress: { _ in nil },
+                         addresses: { _ in [Self.me] }, resolvers: { [] }, readRetryAfter: 20)
+        }
+        let sniffer = Sniffer(open: { interface in
+                                  guard interface == "utun4" else { return FakeCapture(linkType: PacketCapture.linkRaw) }
+                                  route.withLock { $0 = "en0" }
+                                  return Failing()
+                              },
+                              host: host(), onEvents: { _ in }, onStatus: { status in statuses.withLock { $0.append(status) } })
+        sniffer.start()
+        XCTAssertTrue(eventually { statuses.withLock { $0 }.last == .capturing(interface: "en0") }, "reopened where the route is, without the 20 s wait")
+        XCTAssertEqual(statuses.withLock { $0 }, [.capturing(interface: "utun4"), .capturing(interface: "en0")], "and never said it was not capturing")
+        sniffer.stop()
+
+        route.withLock { $0 = "utun4" }
+        let opens = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let byTurns = Sniffer(open: { interface in
+                                  opens.withLock { $0.append(interface) }
+                                  route.withLock { $0 = interface == "utun4" ? "en0" : "utun4" }
+                                  return Failing()
+                              },
+                              host: host(), onEvents: { _ in }, onStatus: { _ in })
+        defer { byTurns.stop() }
+        byTurns.start()
+        XCTAssertTrue(eventually { opens.withLock { $0 }.count >= 2 })
+        usleep(500_000)
+        XCTAssertEqual(opens.withLock { $0 }, ["utun4", "en0"], "the second failure in a row waits, though the route moved again")
+    }
+
     /// A raw-IP capture that delivers its packets on the first read, then nothing.
     private final class OnePass: CaptureSource, @unchecked Sendable {
         let dataLinkType = PacketCapture.linkRaw
