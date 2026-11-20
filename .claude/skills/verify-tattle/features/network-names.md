@@ -87,6 +87,11 @@ Preconditions:
   the connection did not start with a TLS or HTTP handshake`.
 - **Unnamed, timeout.** The same for the silent connection, `$V save silent-detail`. Facts:
   `No name no complete handshake came in the connection's first 20 seconds`.
+- **From DNS.** Look github.com up over UDP from the gateway, `dig +short github.com A
+  @<gateway>`, then `$V connect garbage` and the same lookup once more, in case the answer
+  moved. The group's row reads `github.com, from DNS, <ip>:22 · TCP · connected · nc, ...`;
+  its detail has `Destination github.com` and `Name from a DNS reply for the address`, and
+  history `github.com | dns`. The sniffer saw this Mac's query and took the reply to it.
 - **History.** `$V db "select localPort, pid, processName, remoteAddress, remotePort,
   name, nameSource from connection where localPort in (<three ports>)"`: `example.com |
   http`, `| none:not-handshake`, `| none:timeout`.
@@ -233,6 +238,35 @@ Preconditions:
   walk names nothing. `connect` looks its host up over TCP so the fallback
   cannot name the garbage and silent connections; looking github.com up any other way first (a
   browser, `curl`, `ssh`) turns their outcome into `dns`.
+- A name as the program's word and a reply matched to its query, proven 2026-11-19 on the
+  development Mac with the broker, dev copy built with both changes,
+  run `2026-11-19T223658`: `nc` to example.com shows `Name from what the program asked for in
+  its HTTP request`; after `dig github.com` through the system's resolver, which Tailscale
+  forwards to the router over the capture interface, `nc` to `140.82.114.4:22` shows
+  `github.com, from DNS` and `Name from a DNS reply for the address`, history `github.com |
+  dns`. The same after a lookup sent straight to the router (run `2026-11-19T221639`), as
+  before the change at `526aa39` (run `2026-11-19T220344`). The log has no `kernel filter rejected`, so the kernel took the program that
+  passes this Mac's queries; `testKernelAcceptsTheProgram` skips where `/dev/bpf*` is root-only.
+  A reply that answers no query cannot be sent to the Mac on demand: that rests on
+  `testADNSReplyThatAnswersNoQueryOfThisMacsIsIgnored` and
+  `testAQueryIsHeldOnlyUntilItsReplyOrTenSeconds`. On the test Mac, debug build, CPU time,
+  5,000 replies of 88 A records in 1,462 bytes, five runs a side, `526aa39` against the change: one
+  nobody asked for 2.35 to 2.89 ms and 88 addresses named, to 0.002 to 0.003 ms and none; one
+  that answers a query, with its query, 2.55 to 2.80 ms to 2.60 to 2.78 ms (3.19 in the first
+  run), 88 addresses named on both.
+- How large real ClientHellos are, measured 2026-11-19 on the development Mac: a debug line
+  per segment of each TLS flow over TCP, 12 minutes of the Mac's own traffic a side. At
+  `526aa39`, 110 flows: 104 hellos larger than their first segment (median 1,733 bytes,
+  largest 2,469, no segment over 1,448), 6 named from the first segment, all 110 named. With
+  the change, 120 flows: 108 larger than their first segment, 103 named from the first
+  segment, 91 of them before the hello was whole, all 120 named. No segment was cut by the
+  snap length on either side, and none ended as `gap`: on this link a segment reaches the
+  capture no longer than 1,448 bytes. A name read from a cut segment
+  (`testASegmentCutByTheSnapLengthEndsBuffering`), a handshake in a SYN
+  (`testAHelloInTheSYNNamesTheFlow`), an address for a name
+  (`testNamesThatFailValidationLeaveTheFlowUnnamed`) and the wait after a failed read
+  (`testAFailedReadWaitsLongerEachTimeBeforeReopening`) rest on the unit tests: none can be
+  made to happen on demand with the hosts and bytes `connect` may send.
 - DNS replies bounded, proven 2026-11-10 on the development Mac with the broker, dev copy at
   `c8d4028`, run `2026-11-10T163829`: `nc` to example.com shows `Name from the HTTP request`,
   and with no traffic made for it an `ssh` to `140.82.113.3:22` was logged `notHandshake` and

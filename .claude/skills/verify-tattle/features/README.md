@@ -46,7 +46,8 @@ to get to it (user POV)`, `Driving it with tattle-verify` (starting with
   that replaces itself, incoming connections and a Tailscale peer's reach 2026-11-08; an
   owner and its app read with the socket table and a process's own name for itself 2026-11-09;
   the history database written ahead and a name found by its flow, and DNS replies bounded,
-  2026-11-10; an Apple-signed file outside macOS 2026-11-15.
+  2026-11-10; an Apple-signed file outside macOS 2026-11-15; a name as the program's word
+  and a DNS reply matched to its query 2026-11-19.
 - [Packet access](./packet-access.md): installing and removing the broker that gives the
   sniffer packets; the password step is the user's. Remove and Install proven 2026-10-25 on
   both copies, Remove from Startup and the refused callers on the release build; a
