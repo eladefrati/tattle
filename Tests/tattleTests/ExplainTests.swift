@@ -1331,14 +1331,15 @@ final class ExplainerTests: XCTestCase {
     /// A press that follows a change of the row's buttons within a double click's time is the
     /// second half of one, aimed at the button that stood there before: it does not count.
     func testAPressStraightAfterTheRowsButtonsChangeDoesNotCount() {
-        let changed = Date(timeIntervalSince1970: 1_000)
+        let changed: TimeInterval = 1_000
         for later in [0, 0.2, 0.49] {
             XCTAssertFalse(ExplainSection.counts(pressAt: changed + later, changed: changed, interval: 0.5), "\(later) s")
         }
         for later in [0.5, 0.6, 30] {
             XCTAssertTrue(ExplainSection.counts(pressAt: changed + later, changed: changed, interval: 0.5), "\(later) s")
         }
-        XCTAssertTrue(ExplainSection.counts(pressAt: changed, changed: .distantPast, interval: 0.5), "a row that has not changed")
+        XCTAssertTrue(ExplainSection.counts(pressAt: changed, changed: nil, interval: 0.5), "a row that has not changed")
+        XCTAssertTrue(ExplainSection.counts(pressAt: changed - 3_600, changed: changed, interval: 0.5), "a time read before the change")
     }
 
     /// Asked again, a host whose name now goes out as a placeholder gets an answer that is not

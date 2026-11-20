@@ -19,8 +19,8 @@ struct ExplainSection: View {
     @State private var error: String?
     /// Forget was pressed once: the next press deletes the kept answer.
     @State private var forgetting = false
-    /// When the row's buttons last changed.
-    @State private var changed = Date.distantPast
+    /// When the row's buttons last changed, as the Mac's uptime.
+    @State private var changed: TimeInterval?
 
     var body: some View {
         Card {
@@ -64,7 +64,7 @@ struct ExplainSection: View {
                     if busy { ProgressView().controlSize(.small) }
                     ForEach(controls.trailing, id: \.self) { button($0) }
                 }
-                .onChange(of: controls) { changed = Date() }
+                .onChange(of: controls) { changed = ProcessInfo.processInfo.systemUptime }
                 .frame(minHeight: 22)
                 if rule == nil && !providerConfigured {
                     Text("Choose a provider in Settings to ask a model.")
@@ -109,15 +109,19 @@ struct ExplainSection: View {
     }
 
     /// Whether a press counts. One that follows a change of the row's buttons sooner than a
-    /// double click's second press was aimed at the button that stood there before.
-    static func counts(pressAt now: Date, changed: Date, interval: TimeInterval) -> Bool {
-        now.timeIntervalSince(changed) >= interval
+    /// double click's second press was aimed at the button that stood there before. Both
+    /// times are the Mac's uptime, which setting the clock does not move; a press timed
+    /// before the change counts, so no reading can leave the buttons dead.
+    static func counts(pressAt now: TimeInterval, changed: TimeInterval?, interval: TimeInterval) -> Bool {
+        guard let changed else { return true }
+        let since = now - changed
+        return since < 0 || since >= interval
     }
 
     /// Runs a button's action unless the press came straight after the row's buttons changed:
     /// a double press then does what one press does, whichever button took the first one's place.
     private func press(_ action: () -> Void) {
-        guard Self.counts(pressAt: Date(), changed: changed, interval: NSEvent.doubleClickInterval) else { return }
+        guard Self.counts(pressAt: ProcessInfo.processInfo.systemUptime, changed: changed, interval: NSEvent.doubleClickInterval) else { return }
         action()
     }
 
