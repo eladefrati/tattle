@@ -33,6 +33,18 @@ struct ExplainRequest: Equatable, Sendable {
 }
 
 struct Fact: Equatable, Sendable {
+    /// A piece of a value: its words, or a path it holds, whole.
+    enum Part: Equatable, Sendable {
+        case text(String)
+        case path(String)
+
+        var text: String {
+            switch self {
+            case .text(let text), .path(let text): text
+            }
+        }
+    }
+
     var name: String
     var value: String
     /// What the model is told when it must differ from what the panel shows: the panel can
@@ -40,22 +52,28 @@ struct Fact: Equatable, Sendable {
     var promptValue: String?
     /// False for a fact only the panel shows.
     var inPrompt: Bool
-    /// The paths in the value, each whole. Text alone does not show where a path with spaces
-    /// ends; known whole, a path under a home folder or on another disk is sent without its
-    /// folders (`Redactor.cut`).
-    var paths: [String]
+    /// What the model is told of a value that holds paths, in parts, in place of the value.
+    /// Text alone does not show where a path with spaces ends; known whole, a path under a
+    /// home folder or on another disk is sent without its folders (`Redactor.cut`). Held apart
+    /// from the words around it, a path is never searched for, however many a value holds.
+    var promptParts: [Part]
 
-    init(name: String, value: String, promptValue: String? = nil, inPrompt: Bool = true, paths: [String] = []) {
+    init(name: String, value: String, promptValue: String? = nil, inPrompt: Bool = true, promptParts: [Part] = []) {
         self.name = name
         self.value = value
         self.promptValue = promptValue
         self.inPrompt = inPrompt
-        self.paths = paths
+        self.promptParts = promptParts
+    }
+
+    /// A fact the panel shows and the model is told in the same parts.
+    init(name: String, parts: [Part]) {
+        self.init(name: name, value: parts.map(\.text).joined(), promptParts: parts)
     }
 
     /// A fact whose value is one path.
     static func path(_ name: String, _ path: String) -> Fact {
-        Fact(name: name, value: path, paths: [path])
+        Fact(name: name, parts: [.path(path)])
     }
 
     static func signedBy(_ signature: CodeSignature, as name: String = "Signed by") -> Fact {

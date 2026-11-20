@@ -145,7 +145,7 @@ struct ProcessItem: Equatable, Sendable, Identifiable {
     var facts: [Fact] {
         var facts = [Fact(name: "Process", value: "\(name) (pid \(pid))", promptValue: program.map { "\($0) (pid \(pid))" })]
         if let interpreter, let path {
-            facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))", paths: [path]))
+            facts.append(Fact(name: "Runs with", parts: [.text("\(interpreter) ("), .path(path), .text(")")]))
         } else if let path {
             facts.append(.path("Path", path))
         }

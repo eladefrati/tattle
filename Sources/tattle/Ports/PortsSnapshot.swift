@@ -94,7 +94,7 @@ struct PortItem: Equatable, Sendable, Identifiable {
             Fact(name: "Process", value: processName + " (pid \(pid))", promptValue: process?.program.map { $0 + " (pid \(pid))" }),
         ]
         if let interpreter = process?.interpreter, let path = process?.path {
-            facts.append(Fact(name: "Runs with", value: "\(interpreter) (\(path))", paths: [path]))
+            facts.append(Fact(name: "Runs with", parts: [.text("\(interpreter) ("), .path(path), .text(")")]))
         } else if let path = process?.path {
             facts.append(.path("Path", path))
         }

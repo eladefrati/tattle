@@ -154,19 +154,19 @@ final class RedactorTests: XCTestCase {
         XCTAssertEqual(Redactor.addressesOnly.cut(path: "/Users/someone/dev/acme/x"), "/Users/<other-user>/<folders>/x", "no home known")
     }
 
-    /// Each path a value holds whole is cut where it stands, the longest first, and the rest of
-    /// the value is redacted as before. What is cut holds nothing a later pass would read.
-    func testATextsKnownPathsAreCutBeforeItIsRedacted() {
+    /// Each path a value holds whole is cut where it stands, and the rest of the value is
+    /// redacted as before. What is cut holds nothing a later pass would read.
+    func testAValuesKnownPathsAreCutBeforeItIsRedacted() {
         let tool = "/Users/username/Clients/Acme Corp/bin/tool"
-        XCTAssertEqual(redactor.redact("node (\(tool))", paths: [tool], as: .program), "node (<home>/<folders>/tool)")
-        XCTAssertEqual(redactor.redact("\(tool) (2 arguments, not sent)", paths: [tool], as: .launchItem), "<home>/<folders>/tool (2 arguments, not sent)")
-        let watched = ["/Users/username/Clients/Acme Corp/inbox", "/Users/username/Clients/Acme Corp/inbox/urgent items", "/etc/hosts"]
-        XCTAssertEqual(redactor.redact("when \(watched.joined(separator: ", ")) change", paths: watched, as: .launchItem),
+        XCTAssertEqual(redactor.redact([.text("node ("), .path(tool), .text(")")], as: .program), "node (<home>/<folders>/tool)")
+        XCTAssertEqual(redactor.redact([.path(tool), .text(" (2 arguments, not sent)")], as: .launchItem), "<home>/<folders>/tool (2 arguments, not sent)")
+        let watched = Trigger.watchPaths(["/Users/username/Clients/Acme Corp/inbox", "/Users/username/Clients/Acme Corp/inbox/urgent items", "/etc/hosts"])
+        XCTAssertEqual(redactor.redact(watched.parts(scope: .userAgent), as: .launchItem),
                        "when <home>/<folders>/inbox, <home>/<folders>/urgent items, /etc/hosts change")
-        XCTAssertEqual(redactor.redact("at login", paths: [], as: .launchItem), "at login")
-        XCTAssertEqual(redactor.redact("/Users/username/Clients/Acme/username.py", paths: ["/Users/username/Clients/Acme/username.py"], as: .program),
+        XCTAssertEqual(redactor.redact([.text("at login")], as: .launchItem), "at login")
+        XCTAssertEqual(redactor.redact([.path("/Users/username/Clients/Acme/username.py")], as: .program),
                        "<home>/<folders>/username.py", "the last part is read as any name")
-        XCTAssertEqual(redactor.redact("/Users/other/Clients/Acme/x and /Users/other/bin/y", paths: ["/Users/other/Clients/Acme/x"], as: .program),
+        XCTAssertEqual(redactor.redact([.path("/Users/other/Clients/Acme/x"), .text(" and /Users/other/bin/y")], as: .program),
                        "/Users/<other-user>/<folders>/x and /Users/<other-user>/bin/y", "a path not known whole is read as text")
     }
 
@@ -859,8 +859,8 @@ final class PromptTests: XCTestCase {
         let program = "/Users/username/Library/CloudStorage/GoogleDrive-name@example.com/My Drive/Client Acme/sync"
         let facts = [
             Fact.path("Path", program),
-            Fact(name: "Runs with", value: "bash (\(program))", paths: [program]),
-            Fact(name: "Runs", value: "\(program) --token abc", promptValue: "\(program) (2 arguments, not sent)", paths: [program]),
+            Fact(name: "Runs with", parts: [.text("bash ("), .path(program), .text(")")]),
+            Fact(name: "Runs", value: "\(program) --token abc", promptParts: [.path(program), .text(" (2 arguments, not sent)")]),
             Fact.path("Plist", "/Library/LaunchDaemons/com.acme.sync.plist"),
         ]
         let data = try capturedData(in: Prompt.build(instructions: "x", request: ExplainRequest(kind: .launchItem, key: "/Users/username/Clients/Acme/sync.plist", facts: facts), redactor: redactor))

@@ -84,8 +84,8 @@ struct StartupItem: Equatable, Sendable, Identifiable {
     var arguments: [String] = []
     /// When it runs; nil when nothing says.
     var trigger: String?
-    /// The paths `trigger` names: the files and folders launchd watches for the job.
-    var watchedPaths: [String] = []
+    /// `trigger` in parts, with each file or folder launchd watches for the job held whole.
+    var triggerParts: [Fact.Part] = []
     var state: State
     var signature: CodeSignature?
     /// What says which version of the code its command line reaches this is.
@@ -168,9 +168,9 @@ struct StartupItem: Equatable, Sendable, Identifiable {
         if let program, let runs {
             // Arguments can carry tokens, addresses and paths: the model gets only their count.
             let count = arguments.count == 1 ? "1 argument" : "\(arguments.count) arguments"
-            facts.append(Fact(name: "Runs", value: runs, promptValue: arguments.isEmpty ? nil : "\(program) (\(count), not sent)", paths: [program]))
+            facts.append(Fact(name: "Runs", value: runs, promptParts: [.path(program)] + (arguments.isEmpty ? [] : [.text(" (\(count), not sent)")])))
         }
-        facts.append(Fact(name: "When", value: trigger ?? "unknown", paths: watchedPaths))
+        facts.append(Fact(name: "When", value: trigger ?? "unknown", promptParts: triggerParts))
         facts.append(Fact(name: "State", value: state.text))
         switch state {
         case .unreadable(let reason), .unlisted(let reason), .unknown(let reason): facts.append(Fact(name: "Reason", value: reason))
@@ -241,9 +241,7 @@ struct StartupSnapshot: Equatable, Sendable {
                 program: job.program,
                 arguments: job.arguments,
                 trigger: job.isPlaceholder ? "never" : job.triggers.map { $0.description(scope: job.scope) }.joined(separator: ", "),
-                watchedPaths: job.isPlaceholder ? [] : job.triggers.flatMap { trigger -> [String] in
-                    if case .watchPaths(let paths) = trigger { paths } else { [] }
-                },
+                triggerParts: job.isPlaceholder ? [] : Array(job.triggers.map { $0.parts(scope: job.scope) }.joined(separator: [.text(", ")])),
                 state: jobState,
                 signature: started?.signature,
                 codeVersion: started?.version ?? .unknown,

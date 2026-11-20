@@ -37,7 +37,8 @@ enum Prompt {
         let captured: [String: Any] = [
             "item": ["kind": label(for: request.kind), "key": limited(redactor.redact(key: request.key, of: request.kind))],
             "facts": request.facts.filter(\.inPrompt).map {
-                ["name": $0.name, "value": limited(redactor.redact($0.promptValue ?? $0.value, paths: $0.paths, as: context))]
+                let sent = $0.promptParts.isEmpty ? redactor.redact($0.promptValue ?? $0.value, as: context) : redactor.redact($0.promptParts, as: context)
+                return ["name": $0.name, "value": limited(sent)]
             },
         ]
         // The input is only strings, so serialization cannot fail.

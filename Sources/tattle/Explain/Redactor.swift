@@ -117,18 +117,21 @@ struct Redactor: Sendable {
     /// plist's path, which is cut as a path. A host with no dot is a name only this network
     /// resolves; only the key is read so, since in a fact's text the same letters are a word.
     func redact(key: String, of kind: Rule.Kind) -> String {
-        let sent = redact(key, paths: kind == .launchItem && key.hasPrefix("/") ? [key] : [], as: Context(kind))
+        let sent = redact([kind == .launchItem && key.hasPrefix("/") ? .path(key) : .text(key)], as: Context(kind))
         let isBareName = !key.isEmpty && !key.contains(".") && !key.contains(":")
         return kind == .host && isBareName && sent == key ? "<private-host>" : sent
     }
 
-    /// `text` with each of `paths`, which it holds whole, cut, then redacted as any text.
-    func redact(_ text: String, paths: [String], as context: Context) -> String {
-        var out = text
-        for path in paths.sorted(by: { $0.count > $1.count }) {
-            out = out.replacingOccurrences(of: path, with: cut(path: path))
+    /// A value in parts as a prompt carries it: each path cut where it stands, then the whole
+    /// redacted as any text.
+    func redact(_ parts: [Fact.Part], as context: Context) -> String {
+        let text = parts.map { part in
+            switch part {
+            case .text(let text): text
+            case .path(let path): cut(path: path)
+            }
         }
-        return redact(out, as: context)
+        return redact(text.joined(), as: context)
     }
 
     /// macOS's own folders in a home folder, and in its Library: the same on every Mac.

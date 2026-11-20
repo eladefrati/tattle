@@ -149,9 +149,15 @@ enum Trigger: Equatable, Sendable {
         case .keepAlive: "kept running"
         case .interval(let seconds): "every " + Self.duration(seconds)
         case .calendar(let entries): entries.map(Self.describe).joined(separator: "; ")
-        case .watchPaths(let paths): "when " + paths.joined(separator: ", ") + (paths.count == 1 ? " changes" : " change")
+        case .watchPaths: parts(scope: scope).map(\.text).joined()
         case .onDemand: "on demand"
         }
+    }
+
+    /// The same words in parts, with each watched path held whole.
+    func parts(scope: LaunchdItem.Scope) -> [Fact.Part] {
+        guard case .watchPaths(let paths) = self else { return [.text(description(scope: scope))] }
+        return [.text("when ")] + paths.map { [Fact.Part.path($0)] }.joined(separator: [.text(", ")]) + [.text(paths.count == 1 ? " changes" : " change")]
     }
 
     static func duration(_ seconds: Int) -> String {
