@@ -161,9 +161,11 @@ Preconditions:
   answer`: `No explanation yet.` with `Explain`, and the count is 0. `Explain` again stores a
   new unconfirmed answer, which shows `Forget…`, `Ask again` and `Confirm`. An answer that
   was not kept (no `Confirm`) has no `Forget…`. Where the connection is a first contact (an
-  address the copy's history does not hold), its row under `First contact` reads `<terminal>
-  to example.com`; after `Explain`, `Confirm` and `Back` it also reads `Model answer,
-  confirmed by you`, and after `Forget…`, `Forget answer` and `Back` it reads as at first.
+  address the copy's history does not hold; a copy launched on a new data folder holds
+  none), its row under `First contact` reads `<terminal> to example.com`, or `<terminal> to
+  <address>` and `No name seen` with packet capture off; after `Explain`, `Confirm` and
+  `Back` it reads `Model answer, confirmed by you`, and after `Forget…`, `Forget answer` and
+  `Back` it reads as at first.
 - **Rows another process wrote.** With `sqlite3`, put rows into the copy's `rule` table and
   open the detail each would answer for. For a process and for a listener, a `builtin` or
   `user` row carrying the program's own identity, a pattern row (`builtin` `*:*` for ports,
@@ -321,6 +323,20 @@ Preconditions:
   development Mac, the only one with either, run `2026-11-08T185833`. A host's whole-name rule, a
   tailnet name, an address spelled with hyphens and a public bound address rest on unit tests:
   `connect` reaches only its approved hosts, and neither Mac holds a public address.
+- What the prompt leaves out and forgetting an answer proven 2026-11-19 on the test Mac, dev
+  copy built from the sources of the commit titled `fix(explain): prune expired unconfirmed
+  answers every hour while the app runs`, both runs copied to
+  `build/verify/runs/test-mac-2026-11-19/`. Run `2026-11-19T221531`, a titled process: the
+  row and the detail kept the title, the prompt's key and `Process` read `postgres`, and the
+  stored pattern was `postgres`; then `Confirm`, `Forget…`, `Cancel` (the row still stored),
+  `Forget…`, `Forget answer` (`No explanation yet.`, no row) and `Explain` again (a new
+  unconfirmed row). In the same run, a startup item's program, watched path and plist, an
+  email address in a label and a 600-letter label. Run `2026-11-19T221359`, a first contact:
+  its row read `No name seen`, then `Model answer, confirmed by you` after `Confirm` and
+  `Back`, then `No name seen` again after `Forget answer` and `Back`, with no row left.
+  Packet capture was off there, so the row and the key were the address. A titled parent's
+  `Parent`, a titled listener's key, another account's folder, a disk's and the hourly
+  deletion of expired answers rest on unit tests.
 - A host name only the network resolves (`.local`, a search domain, no dot) going out as
   `<private-host>` and keeping no answer rests on unit tests
   (`testAHostNameOnlyThisNetworkResolvesIsReplaced`,

@@ -252,6 +252,9 @@ Preconditions:
   (`testProcessesShowNoSignerForAProcessItsFileDoesNotVouchFor`).
 - An app row's members sit below its facts: scroll its detail (`$V ax scroll down`) before
   pressing one.
+- The list has no rows until the first reading ends, some seconds after the tab is first
+  chosen (about 1,400 processes on the development Mac, 2026-11-19): `$V ax wait "apps and
+  programs" 120` before pressing a row. `$V ax scroll` reports `no scroll bar` until then.
 - On the development Mac the panel closed partway through two runs (`2026-11-07T224046`,
   `2026-11-07T224152`) when something else took focus; retrying each reading got through.
 - The column titles' tooltips seen 2026-11-16 in the dev copy on the development Mac, by a
