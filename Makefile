@@ -109,6 +109,8 @@ endif
 	@if [ -n "$(SIGN_IDENTITY)" ]; then \
 	  codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(APPDIR)/Contents/MacOS/$(BROKER); \
 	  codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(APPDIR); \
+	  [ "$(SIGN_IDENTITY)" = - ] \
+	    || echo "note: signed with a team identity; a broker installed from this build accepts any hardened program the team signs as Tattle or its dev copy, older builds included, so on a Mac holding this key any program you run can get packet access (ADR-0003)"; \
 	else \
 	  echo "warning: no Apple Development identity found; signing ad hoc, permission grants will reset on every rebuild" >&2; \
 	  codesign --force --options runtime --sign - $(APPDIR)/Contents/MacOS/$(BROKER); \
