@@ -468,6 +468,28 @@ final class FlowNamerTests: XCTestCase {
         XCTAssertEqual(again.dnsCount, 1, "the second reply's address is not taken")
     }
 
+    /// Nothing of a query outlasts the pass that follows its reply or its time. The order
+    /// the queries are forgotten in lists each one's resolver, port and id, and is cut down
+    /// at every pass to the ones still waiting.
+    func testNothingOfAQueryIsLeftAfterThePassThatFollowsItsReplyOrItsTime() {
+        func reply(to port: UInt16) -> Packet { udp(from: resolver, to: me, srcPort: 53, dstPort: port, Array(dnsReply.payload)) }
+        var answered = namer()
+        _ = answered.observe(Self.query(answeredBy: reply(to: 60001)), at: t0)
+        _ = answered.observe(Self.query(answeredBy: reply(to: 60002)), at: t0 + 1)
+        _ = answered.observe(reply(to: 60002), at: t0 + 1.1)
+        XCTAssertEqual(answered.dnsCount, 1, "the second query was answered")
+        XCTAssertEqual(answered.queryCount, 1, "while the first, older, still waits")
+        _ = answered.expire(now: t0 + 2)
+        XCTAssertEqual(answered.queryTraces, 1, "the answered one is no longer listed behind it")
+
+        var aged = namer()
+        _ = aged.observe(Self.query(answeredBy: reply(to: 60001)), at: t0)
+        for port: UInt16 in 60002...60005 { _ = aged.observe(Self.query(answeredBy: reply(to: port)), at: t0 + 5) }
+        _ = aged.expire(now: t0 + FlowNamer.queryAwaited)
+        XCTAssertEqual(aged.queryCount, 4, "the first is too old, the rest still wait")
+        XCTAssertEqual(aged.queryTraces, 4, "and nothing is left of the first")
+    }
+
     /// A query is held for the match and no longer: until its reply, or ten seconds, and
     /// never more than the cap. Only this Mac's queries to its resolvers are held at all.
     func testAQueryIsHeldOnlyUntilItsReplyOrTenSeconds() {

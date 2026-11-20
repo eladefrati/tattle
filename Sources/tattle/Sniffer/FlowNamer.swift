@@ -193,6 +193,9 @@ struct FlowNamer: Sendable {
     var flowCount: Int { flows.count }
     var dnsCount: Int { dnsMap.count }
     var queryCount: Int { queries.count }
+    /// How many queries the namer holds anything of, waiting or not: after an `expire`, the
+    /// ones still waiting. For tests.
+    var queryTraces: Int { queries.traces }
 
     /// The packet goes to a public address from one this namer does not know as ours:
     /// the address set is stale, since this Mac sees no other host's traffic. Wi-Fi
@@ -525,6 +528,8 @@ private struct AwaitedQueries {
     private var order = ArrivalOrder<Key>()
 
     var count: Int { entries.count }
+    /// The queries the order lists, the ones gone since the last `forget` among them.
+    var traces: Int { order.count }
 
     mutating func insert(_ question: DNS.Question, for key: Key, at ts: Double) {
         entries[key] = (question, ts, order.append(key))
@@ -572,6 +577,9 @@ private struct ArrivalOrder<Key: Hashable & Sendable>: Sendable {
     private var places: [(key: Key, serial: Int)] = []
     private var head = 0
     private var serial = 0
+
+    /// The places held, stale ones and ones already passed among them.
+    var count: Int { places.count }
 
     /// Appends `key`, returning the serial for the owner to keep with its entry.
     mutating func append(_ key: Key) -> Int {
