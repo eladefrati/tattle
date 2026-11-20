@@ -109,6 +109,32 @@ final class SeedLoaderTests: XCTestCase {
         }
     }
 
+    /// The categories the shipped rules may carry. `relay` and `ech-cover` change how a row
+    /// reads (`ConnectionName.kind`); the rest only describe. A new one is added here, so a
+    /// mistyped category cannot ship.
+    private static let shippedCategories: Set = ["relay", "ech-cover", "system", "sharing", "developer-tool"]
+
+    /// The loader decodes the shipped files without validating them, so this test does: a
+    /// mistyped `relay` would read a relay as the destination, and two files with one source
+    /// would replace each other's rules at every launch.
+    func testShippedFilesUseKnownCategoriesAndOneSourceEach() throws {
+        let files = try FileManager.default.contentsOfDirectory(at: repoSeeds, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+        XCTAssertFalse(files.isEmpty)
+        var sources: [Rule.Source: String] = [:]
+        for url in files {
+            let file = try JSONDecoder().decode(SeedLoader.File.self, from: Data(contentsOf: url))
+            if let other = sources[file.source] {
+                XCTFail("\(url.lastPathComponent) and \(other) both carry source \(file.source.rawValue)")
+            }
+            sources[file.source] = url.lastPathComponent
+            for entry in file.rules {
+                guard let category = entry.category else { continue }
+                XCTAssertTrue(Self.shippedCategories.contains(category), "\(url.lastPathComponent), \(entry.pattern): \(category)")
+            }
+        }
+    }
+
     /// The shipped rules are the app's own files, read at every launch: none goes into the
     /// database, where another process could write one (ADR-0005).
     func testShippedRulesAreNotWrittenToTheDatabase() throws {
