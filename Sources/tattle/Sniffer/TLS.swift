@@ -87,6 +87,8 @@ enum HTTP {
     /// nil when there is no Host header or its value is not a host name.
     struct Request {
         let host: String?
+        /// Whether the request carried a Host header, whatever its value.
+        let hasHostHeader: Bool
     }
 
     static func request(_ payload: ArraySlice<UInt8>) -> Request? {
@@ -98,9 +100,9 @@ enum HTTP {
             if line.isEmpty { break }
             if line.lowercased().hasPrefix("host:") {
                 let value = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                return Request(host: HostName(value.utf8, allowingPort: true)?.text)
+                return Request(host: HostName(value.utf8, allowingPort: true)?.text, hasHostHeader: true)
             }
         }
-        return Request(host: nil)
+        return Request(host: nil, hasHostHeader: false)
     }
 }

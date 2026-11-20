@@ -218,9 +218,15 @@ final class FlowNamerTests: XCTestCase {
             XCTAssertEqual(quicOutcome(name), .unnamed(.noServerName), "QUIC SNI with \(shape)")
             // A Host header is one line: a CR or LF in it ends the header instead.
             guard !name.contains(0x0d), !name.contains(0x0a), shape != "a port outside a Host header" else { continue }
-            XCTAssertEqual(httpOutcome(name), .unnamed(.noServerName), "Host with \(shape)")
+            XCTAssertEqual(httpOutcome(name), .unnamed(.noHostName), "Host with \(shape)")
         }
-        XCTAssertEqual(httpOutcome(Array("example.org:x".utf8)), .unnamed(.noServerName), "a port that is not a number")
+        XCTAssertEqual(httpOutcome(Array("example.org:x".utf8)), .unnamed(.noHostName), "a port that is not a number")
+        XCTAssertEqual(httpOutcome(Array("93.184.216.34".utf8)), .unnamed(.noHostName), "an address: the request did carry a Host header")
+        XCTAssertEqual(FlowEvent.Reason.noHostName.text, "the HTTP request's Host header was not a host name")
+        var headless = namer()
+        _ = headless.observe(tcp(port: 80, flags: 0x02, seq: 1), at: t0)
+        XCTAssertEqual(headless.observe(tcp(port: 80, flags: 0x18, seq: 2, Array("GET / HTTP/1.0\r\n\r\n".utf8)), at: t0).first?.kind,
+                       .unnamed(.noServerName), "a request without a Host header")
         XCTAssertEqual(tlsOutcome(Array("Example.COM.".utf8)), .named("example.com", .sni))
         XCTAssertEqual(quicOutcome(Array("Example.COM.".utf8)), .named("example.com", .quic))
         XCTAssertEqual(httpOutcome(Array("Example.ORG:8080".utf8)), .named("example.org", .http), "the port is not part of the name")

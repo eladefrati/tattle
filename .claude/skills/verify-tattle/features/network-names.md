@@ -22,6 +22,7 @@ there is no name. History keeps the outcome: `name` and `nameSource` (`sni`, `qu
 - `net-unnamed`: a connection detail with `No name` and the reason: `the connection did
   not start with a TLS or HTTP handshake`, `no complete handshake came in the connection's
   first 20 seconds`, `part of the handshake was missed`, `the handshake carried no server name`,
+  `the HTTP request's Host header was not a host name`,
   `the QUIC handshake could not be read`, `a QUIC version Tattle cannot read`, `too many
   connections opened at once for Tattle to follow this one`, `the packet capture stopped or
   restarted before this connection's handshake was read`.

@@ -50,9 +50,12 @@ struct FlowEvent: Equatable, Sendable {
         case notHandshake
         /// A segment arrived out of order before the handshake was complete.
         case gap
-        /// A ClientHello or HTTP request without a valid host name, or a handshake too large
-        /// to buffer.
+        /// A ClientHello without a valid server name, an HTTP request without a Host header,
+        /// or a handshake too large to buffer.
         case noServerName
+        /// An HTTP request whose Host header is not a host name: an address, or a value
+        /// `HostName` refuses.
+        case noHostName
         case quic(QUIC.Failure)
         /// No handshake within the window: no payload, or one that never completed.
         case timeout
@@ -71,6 +74,7 @@ struct FlowEvent: Equatable, Sendable {
             case .notHandshake: Self.codePrefix + "not-handshake"
             case .gap: Self.codePrefix + "gap"
             case .noServerName: Self.codePrefix + "no-server-name"
+            case .noHostName: Self.codePrefix + "no-host-name"
             case .quic(let failure): Self.codePrefix + "quic-" + failure.rawValue
             case .timeout: Self.codePrefix + "timeout"
             case .evicted: Self.codePrefix + "evicted"
@@ -83,6 +87,7 @@ struct FlowEvent: Equatable, Sendable {
             case .notHandshake: "the connection did not start with a TLS or HTTP handshake"
             case .gap: "part of the handshake was missed"
             case .noServerName: "the handshake carried no server name"
+            case .noHostName: "the HTTP request's Host header was not a host name"
             case .quic(.unsupportedVersion): "a QUIC version Tattle cannot read"
             case .quic: "the QUIC handshake could not be read"
             case .timeout: "no complete handshake came in the connection's first \(Int(FlowNamer.finalizeAfter)) seconds"
@@ -348,7 +353,7 @@ struct FlowNamer: Sendable {
         if buffer.isEmpty, payload.first != 0x16 {
             flow.tlsBuffer = nil
             guard let request = HTTP.request(payload) else { return .unnamed(.notHandshake) }
-            return request.host.map { .named($0, .http) } ?? .unnamed(.noServerName)
+            return request.host.map { .named($0, .http) } ?? .unnamed(request.hasHostHeader ? .noHostName : .noServerName)
         }
         buffer.append(contentsOf: payload)
         switch TLS.clientHelloFromRecords(buffer) {
