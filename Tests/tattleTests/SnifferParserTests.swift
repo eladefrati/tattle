@@ -227,12 +227,75 @@ final class SnifferParserTests: XCTestCase {
 
     func testClientHelloSplitAcrossTwoSegments() {
         let stream = record(Self.rfcClientHello[...])
-        let first = Array(stream.prefix(100))
-        let second = Array(stream.dropFirst(100))
+        let first = Array(stream.prefix(40))
+        let second = Array(stream.dropFirst(40))
 
         guard case .needMore = TLS.clientHelloFromRecords(first) else { return XCTFail("a partial record needs more") }
         guard case .hello(let sni) = TLS.clientHelloFromRecords(first + second) else { return XCTFail() }
         XCTAssertEqual(sni, "example.com")
+    }
+
+    /// A ClientHello with `before` bytes of another extension ahead of its server name and
+    /// `after` bytes of one behind it.
+    static func clientHello(sni: [UInt8]?, before: Int, after: Int) -> [UInt8] {
+        func ext(_ type: UInt16, _ body: [UInt8]) -> [UInt8] {
+            [UInt8(type >> 8), UInt8(type & 0xff), UInt8(body.count >> 8), UInt8(body.count & 0xff)] + body
+        }
+        var extensions: [UInt8] = []
+        if before > 0 { extensions += ext(0x0033, [UInt8](repeating: 0x5a, count: before)) }
+        if let sni { extensions += ext(0, [UInt8((sni.count + 3) >> 8), UInt8((sni.count + 3) & 0xff), 0, UInt8(sni.count >> 8), UInt8(sni.count & 0xff)] + sni) }
+        if after > 0 { extensions += ext(0x0015, [UInt8](repeating: 0, count: after)) }
+        let body: [UInt8] = [3, 3] + [UInt8](repeating: 0xab, count: 32) + [0, 0, 2, 0x13, 0x01, 1, 0]
+            + [UInt8(extensions.count >> 8), UInt8(extensions.count & 0xff)] + extensions
+        return [1, UInt8(body.count >> 16), UInt8(body.count >> 8 & 0xff), UInt8(body.count & 0xff)] + body
+    }
+
+    private static func outcome(_ result: TLS.HelloResult) -> String {
+        switch result {
+        case .needMore: "needMore"
+        case .notClientHello: "notClientHello"
+        case .hello(let sni): "hello(\(sni ?? "nil"))"
+        }
+    }
+
+    /// The server name is read as soon as its extension is in hand, however much of the
+    /// hello is still to come: a hello can outgrow one segment, and the capture cuts a
+    /// segment at its snap length. No prefix may say anything the whole hello does not.
+    func testTheServerNameIsReadOnceItsExtensionIsInHandAndNoPrefixSaysOtherwise() {
+        let name = Array("example.com".utf8)
+        let hellos: [(String, [UInt8])] = [
+            ("the RFC's", Self.rfcClientHello),
+            ("a name first", Self.clientHello(sni: name, before: 0, after: 1800)),
+            ("a name after a key share", Self.clientHello(sni: name, before: 1200, after: 600)),
+            ("a name last", Self.clientHello(sni: name, before: 1800, after: 0)),
+            ("no name", Self.clientHello(sni: nil, before: 1200, after: 600)),
+            ("no extensions", Array(Self.clientHello(sni: nil, before: 0, after: 0))),
+            ("a name that is none", Self.clientHello(sni: Array("exa mple.com".utf8), before: 100, after: 600)),
+            ("an address for a name", Self.clientHello(sni: Array("17.253.144.10".utf8), before: 100, after: 600)),
+        ]
+        for (shape, hello) in hellos {
+            let whole = Self.outcome(TLS.clientHello(hello))
+            XCTAssertNotEqual(whole, "needMore", shape)
+            let inRecords = record(hello[..<(hello.count / 3)]) + record(hello[(hello.count / 3)...])
+            XCTAssertEqual(Self.outcome(TLS.clientHelloFromRecords(inRecords)), whole, "\(shape), in two records")
+            for length in 0..<hello.count {
+                let bare = Self.outcome(TLS.clientHello(Array(hello[..<length])))
+                XCTAssertTrue(bare == "needMore" || bare == whole, "\(shape): \(bare) from \(length) bytes of a hello that says \(whole)")
+            }
+            for length in 0..<inRecords.count {
+                let framed = Self.outcome(TLS.clientHelloFromRecords(Array(inRecords[..<length])))
+                XCTAssertTrue(framed == "needMore" || framed == whole, "\(shape): \(framed) from \(length) bytes of records that say \(whole)")
+            }
+        }
+
+        // The name's extension ends 4 + 2 + 32 + 1 + 4 + 2 + 2 bytes of header in, after the
+        // 1204-byte key share and its own 20 bytes.
+        let hello = Self.clientHello(sni: name, before: 1200, after: 600)
+        let nameEnd = 47 + 1204 + 20
+        XCTAssertEqual(Self.outcome(TLS.clientHello(Array(hello[..<(nameEnd - 1)]))), "needMore", "one byte short of the name")
+        XCTAssertEqual(Self.outcome(TLS.clientHello(Array(hello[..<nameEnd]))), "hello(example.com)", "600 bytes before the hello ends")
+        let cut = record(hello[...]).prefix(5 + nameEnd)
+        XCTAssertEqual(Self.outcome(TLS.clientHelloFromRecords(Array(cut))), "hello(example.com)", "a record cut after the name")
     }
 
     func testClientHelloSplitAcrossTwoRecords() {

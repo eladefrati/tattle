@@ -244,8 +244,8 @@ struct FlowNamer: Sendable {
                 case .unnamed(let reason):
                     return flow.dnsNamed ? [] : [FlowEvent(key: key, kind: .unnamed(reason))]
                 case .pending:
-                    // Still incomplete, and the rest of this segment was cut by the snap
-                    // length: the handshake can never complete, so say so now.
+                    // The server name has not come, and the rest of this segment was cut by
+                    // the snap length: what holds the name was not captured, so say so now.
                     guard p.uncaptured > 0, flow.tlsBuffer != nil else { return [] }
                     flow.tlsBuffer = nil
                     return flow.dnsNamed ? [] : [FlowEvent(key: key, kind: .unnamed(.gap))]

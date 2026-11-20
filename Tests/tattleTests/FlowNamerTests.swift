@@ -36,7 +36,7 @@ final class FlowNamerTests: XCTestCase {
         var n = namer()
         XCTAssertEqual(n.observe(tcp(flags: 0x02, seq: 1000), at: t0), [FlowEvent(key: tcpKey, kind: .opened)])
         let record = clientHelloRecord
-        let first = Array(record.prefix(90)), second = Array(record.dropFirst(90))
+        let first = Array(record.prefix(40)), second = Array(record.dropFirst(40))
         XCTAssertEqual(n.observe(tcp(flags: 0x18, seq: 1001, first), at: t0 + 0.01), [])
         XCTAssertEqual(n.observe(tcp(flags: 0x18, seq: 1001, first), at: t0 + 0.02), [], "a retransmit is dropped")
         XCTAssertEqual(n.observe(tcp(flags: 0x18, seq: 1001 + UInt32(first.count), second), at: t0 + 0.03),
@@ -56,9 +56,10 @@ final class FlowNamerTests: XCTestCase {
         XCTAssertEqual(n.observe(tcp(flags: 0x18, seq: 1001 + 50, Array(record.dropFirst(50))), at: t0), [], "buffering ended, even for the missing piece")
     }
 
-    /// A handshake segment cut at the snap length cannot be completed: it says so at once
-    /// instead of waiting out the timeout, and a later in-order segment is placed by the
-    /// segment's length on the wire, not by what was captured.
+    /// A handshake segment cut at the snap length before the server name cannot be
+    /// completed: it says so at once instead of waiting out the timeout, and a later
+    /// in-order segment is placed by the segment's length on the wire, not by what was
+    /// captured. One cut after the name is named: the rest of the hello is not needed.
     func testASegmentCutByTheSnapLengthEndsBuffering() {
         var n = namer()
         _ = n.observe(tcp(flags: 0x02, seq: 1000), at: t0)
@@ -73,6 +74,37 @@ final class FlowNamerTests: XCTestCase {
         var tail = tcp(flags: 0x18, seq: 1001, clientHelloRecord + [0x17, 3, 3, 0, 10])
         tail.uncaptured = 2000
         XCTAssertEqual(whole.observe(tail, at: t0 + 0.01), [FlowEvent(key: tcpKey, kind: .named("example.com", .sni))], "the hello itself was captured whole")
+
+        // A hello of 2,500 bytes sent as one segment, of which the capture keeps what fits
+        // in its snap length beside 66 bytes of headers.
+        let captured = Int(CaptureFilter.snapLength) - 66
+        for (before, expected) in [(1200, FlowEvent.Kind.named("example.com", .sni)), (2300, .unnamed(.gap))] {
+            let hello = SnifferParserTests.clientHello(sni: Array("example.com".utf8), before: before, after: 2400 - before)
+            let record = [0x16, 0x03, 0x01, UInt8(hello.count >> 8), UInt8(hello.count & 0xff)] + hello
+            var large = namer()
+            _ = large.observe(tcp(flags: 0x02, seq: 1000), at: t0)
+            var segment = tcp(flags: 0x18, seq: 1001, Array(record.prefix(captured)))
+            segment.uncaptured = record.count - captured
+            XCTAssertEqual(large.observe(segment, at: t0 + 0.01), [FlowEvent(key: tcpKey, kind: expected)], "the name \(before) bytes into the extensions")
+        }
+    }
+
+    /// A hello larger than one segment is named from the segment that holds the name, so a
+    /// later segment that is lost or out of order costs nothing.
+    func testAHelloOverTwoSegmentsIsNamedFromTheOneThatHoldsTheName() {
+        let hello = SnifferParserTests.clientHello(sni: Array("example.com".utf8), before: 100, after: 1800)
+        let record = [0x16, 0x03, 0x01, UInt8(hello.count >> 8), UInt8(hello.count & 0xff)] + hello
+        var n = namer()
+        _ = n.observe(tcp(flags: 0x02, seq: 1000), at: t0)
+        XCTAssertEqual(n.observe(tcp(flags: 0x18, seq: 1001, Array(record.prefix(1460))), at: t0 + 0.01),
+                       [FlowEvent(key: tcpKey, kind: .named("example.com", .sni))])
+        XCTAssertEqual(n.observe(tcp(flags: 0x18, seq: 1001 + 1460 + 500, [1, 2, 3]), at: t0 + 0.02), [], "the rest never came in order")
+
+        // The same over QUIC, where such a hello spans two Initials.
+        var q = namer()
+        let piece = Array(hello.prefix(1000))
+        let frame: [UInt8] = [0x06, 0x00, 0x40 | UInt8(piece.count >> 8), UInt8(piece.count & 0xff)] + piece
+        XCTAssertEqual(q.observe(udp(SnifferParserTests.sealInitial(frame)), at: t0).last?.kind, .named("example.com", .quic))
     }
 
     func testNotAHandshakeAndTimeoutAreReported() {
