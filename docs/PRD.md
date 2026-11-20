@@ -189,7 +189,9 @@ Resolution order for any item:
    confirmed it. An answer is shown without being stored when nothing would tell a later
    item by its key from this one: code with no identity or whose file cannot be read, and
    a host whose key went out as a placeholder (a private address, or a name only the user's
-   network resolves). There is no automatic check; confirmation is the user's. A stored
+   network resolves). Asked again over a stored unconfirmed answer, it is shown in that
+   answer's place while the detail is open, and the stored one stays. There is no automatic
+   check; confirmation is the user's. A stored
    answer, confirmed or not, can be forgotten from its detail, in two presses; the item
    then reads as it would without it and can be asked about again. The source stays
    `llm` so provenance is never lost. The schema lets the model propose a pattern, and

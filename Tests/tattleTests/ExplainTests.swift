@@ -1285,6 +1285,37 @@ final class ExplainerTests: XCTestCase {
         XCTAssertNil(ExplainSection.unkept(kept, givenFor: nil, request: nothing), "the knowledge base speaks for a kept one")
     }
 
+    /// Asked again, a host whose name now goes out as a placeholder gets an answer that is not
+    /// kept. The view shows it in place of the unconfirmed answer it was asked to replace,
+    /// which stays in the knowledge base. A confirmed answer and a shipped rule speak first,
+    /// as they do over any model answer.
+    func testAnAnswerNotKeptIsShownInPlaceOfTheUnconfirmedOneAskedAgain() async throws {
+        let host = ExplainRequest(kind: .host, key: "www.example.edu")
+        let old = try await explainer(FakeProvider(output: #"{"purpose":"old","risk":"low","confidence":"low"}"#)).ask(host)
+        XCTAssertNotNil(old.id)
+
+        // The network's search domain is now the host's own.
+        let provider = FakeProvider(output: #"{"purpose":"new","risk":"low","confidence":"low"}"#)
+        let onCampus = Explainer(store: store, settings: settings, makeRedactor: {
+            Redactor(home: "/Users/username", username: "username", machineNames: [], searchDomains: ["example.edu"])
+        }, makeProvider: { _ in provider })
+        let new = try await onCampus.ask(host)
+        XCTAssertNil(new.id)
+        let kept = try await onCampus.lookup(host)
+        XCTAssertEqual(kept?.purpose, "old", "nothing is deleted")
+
+        let unkept = ExplainSection.unkept(new, givenFor: nil, request: host)
+        XCTAssertEqual(ExplainSection.shown(kept: kept, unkept: unkept)?.purpose, "new")
+        XCTAssertEqual(ExplainSection.shown(kept: kept, unkept: nil)?.purpose, "old", "the kept one is back once the view holds no newer one")
+        XCTAssertEqual(ExplainSection.shown(kept: nil, unkept: unkept), new)
+
+        var confirmed = try XCTUnwrap(kept)
+        confirmed.confirmed = Date()
+        XCTAssertEqual(ExplainSection.shown(kept: confirmed, unkept: unkept), confirmed)
+        let shipped = Rule(kind: .host, pattern: "www.example.edu", purpose: "shipped", source: .builtin)
+        XCTAssertEqual(ExplainSection.shown(kept: shipped, unkept: unkept), shipped)
+    }
+
     /// A late answer is shown only when the item on screen is still the one asked about: a
     /// connection named during the call has another key and, like the first, no identity.
     func testASubjectIsTheItemAndItsCodeWhateverItsFacts() {

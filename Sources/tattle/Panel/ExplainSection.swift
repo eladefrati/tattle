@@ -158,11 +158,20 @@ struct ExplainSection: View {
         // The answer the first press was about is gone or replaced: the second would be
         // about another rule.
         if found?.id != rule?.id { forgetting = false }
-        rule = found ?? unkept
+        rule = Self.shown(kept: found, unkept: unkept)
     }
 
-    /// The answer that stays when the knowledge base has none: one not kept (no id), for as
-    /// long as the view holds the code it was given for.
+    /// The answer the view shows: the knowledge base's, or one given here and not kept. That
+    /// one also stands in for the unconfirmed model answer it was asked to replace, which the
+    /// knowledge base still holds; a confirmed answer and a shipped rule speak first.
+    static func shown(kept: Rule?, unkept: Rule?) -> Rule? {
+        guard let unkept else { return kept }
+        guard let kept, kept.source != .llm || kept.confirmed != nil else { return unkept }
+        return kept
+    }
+
+    /// The answer given here and not kept (no id), for as long as the view holds the code it
+    /// was given for.
     static func unkept(_ rule: Rule?, givenFor identity: CodeIdentity?, request: ExplainRequest) -> Rule? {
         guard let rule, rule.id == nil, rule.pattern == request.key, identity == request.identity else { return nil }
         return rule

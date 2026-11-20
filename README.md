@@ -79,7 +79,9 @@ process, so Tattle shows every host it contacted but not which tab caused it.
    stored, and have no **Confirm**: one about code Tattle cannot tell from other code of
    the same name (unnamed code, or a file it cannot read), and one about a host that went
    out as a placeholder, since a private address or name is another device on another
-   network.
+   network. Asked again where an older unconfirmed answer is stored, such an answer is shown
+   in its place while the item is open; the stored one stays until you forget it or it
+   expires.
 
 ## Install
 
