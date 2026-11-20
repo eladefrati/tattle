@@ -67,14 +67,17 @@ struct Packet {
     var uncaptured = 0
     /// The hardware address the frame came from, on a link whose frames carry one.
     var linkSource: ArraySlice<UInt8>?
+    /// The hardware address the frame is addressed to, on the same links.
+    var linkDestination: ArraySlice<UInt8>?
 
     static func parse(_ bytes: [UInt8], dlt: UInt32) -> Packet? {
         var r = ByteReader(bytes)
         do {
             var linkSource: ArraySlice<UInt8>?
+            var linkDestination: ArraySlice<UInt8>?
             switch dlt {
             case 1:  // DLT_EN10MB
-                try r.skip(6)
+                linkDestination = try r.take(6)
                 linkSource = try r.take(6)
                 let type = try r.u16()
                 guard type == 0x0800 || type == 0x86DD else { return nil }
@@ -87,6 +90,7 @@ struct Packet {
             }
             var packet = try parseIP(&r)
             packet?.linkSource = linkSource
+            packet?.linkDestination = linkDestination
             return packet
         } catch {
             return nil

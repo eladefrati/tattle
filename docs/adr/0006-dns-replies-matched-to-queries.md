@@ -41,10 +41,15 @@ wire name exists, and marked "from DNS".
 
 - A reply alone names nothing: one that answers no query is dropped on its transaction id,
   before it is parsed. A forger now has to be believed about a query too.
-- A query is taken for this Mac's by its frame's hardware source, which must be the
-  interface's own, and on a link whose frames carry none (a tunnel) by its IP source. A
-  host that can send this Mac a frame under those, as one on the same link can, forges the
-  query as well as the reply, having seen none of this Mac's traffic, and is not stopped.
+- A query is taken for this Mac's by its frame: from the interface's own hardware address,
+  and addressed to another host's. Any host on the link can write this Mac's hardware
+  address as a frame's source, but such a frame reaches this Mac only when it is addressed
+  to this Mac's own address or to a broadcast or multicast one, and a frame addressed so is
+  not read as sent: this Mac sends nothing so addressed that the sniffer reads. The same
+  test stands before every packet read as sent, a connection's first packets included.
+- That test does not cover a link whose frames carry no hardware address (a tunnel), where
+  a query is known as this Mac's by its IP source alone, nor an interface in promiscuous
+  mode, which also receives a forged frame addressed to a third host.
 - A host that sees a real query, on a shared network or as the resolver itself, and
   answers first is not stopped either: that is the reply the Mac's own resolver takes too,
   so the name shown is the one the Mac was told.

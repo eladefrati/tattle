@@ -12,7 +12,9 @@ import Foundation
 ///   replies, which are taken only when they answer one of those queries).
 ///
 /// Outbound is told from the interface's own hardware address on Ethernet, and from the
-/// interface's addresses on links without one. Fragments other than the first are dropped;
+/// interface's addresses on links without one. A frame from that hardware address which is
+/// addressed to it, or to a broadcast or multicast address, is dropped: this Mac sends
+/// nothing so addressed that the parsers read, and another host can (ADR-0006). Fragments other than the first are dropped;
 /// IPv6 extension headers are not followed (a host's own TCP and UDP rarely have any).
 struct CaptureFilter: Equatable, Sendable {
     struct Instruction: Equatable, Sendable {
@@ -70,7 +72,7 @@ struct CaptureFilter: Equatable, Sendable {
         let v4out = a.label(), v4in = a.label()
         a.loadHalf(at: L + 6)
         a.jumpIfSet(0x1fff, drop, else: nil)  // not the first fragment
-        emitDirection(&a, direction, linkLength: L, family: .v4, outbound: v4out, inbound: v4in)
+        emitDirection(&a, direction, linkLength: L, family: .v4, outbound: v4out, inbound: v4in, drop: drop)
         a.mark(v4out)
         let v4tcp = a.label(), v4udp = a.label()
         a.loadByte(at: L + 9)
@@ -103,7 +105,7 @@ struct CaptureFilter: Equatable, Sendable {
 
         a.mark(v6)
         let v6out = a.label(), v6in = a.label()
-        emitDirection(&a, direction, linkLength: L, family: .v6, outbound: v6out, inbound: v6in)
+        emitDirection(&a, direction, linkLength: L, family: .v6, outbound: v6out, inbound: v6in, drop: drop)
         a.mark(v6out)
         let v6tcp = a.label(), v6udp = a.label()
         a.loadByte(at: L + 6)
@@ -139,7 +141,7 @@ struct CaptureFilter: Equatable, Sendable {
 
     private enum Family { case v4, v6 }
 
-    private static func emitDirection(_ a: inout Assembler, _ direction: Direction, linkLength L: UInt32, family: Family, outbound: Assembler.Label, inbound: Assembler.Label) {
+    private static func emitDirection(_ a: inout Assembler, _ direction: Direction, linkLength L: UInt32, family: Family, outbound: Assembler.Label, inbound: Assembler.Label, drop: Assembler.Label) {
         switch direction {
         case .hardwareAddress(let mac):
             let high = UInt32(mac[0]) << 24 | UInt32(mac[1]) << 16 | UInt32(mac[2]) << 8 | UInt32(mac[3])
@@ -147,7 +149,15 @@ struct CaptureFilter: Equatable, Sendable {
             a.loadWord(at: 6)
             a.jumpIfEqual(high, nil, else: inbound)
             a.loadHalf(at: 10)
-            a.jumpIfEqual(low, outbound, else: inbound)
+            a.jumpIfEqual(low, nil, else: inbound)
+            // From the interface's address, and outbound only if addressed to another host's:
+            // not to a group address (the first byte's low bit), nor to the interface's own.
+            a.loadByte(at: 0)
+            a.jumpIfSet(0x01, drop, else: nil)
+            a.loadWord(at: 0)
+            a.jumpIfEqual(high, nil, else: outbound)
+            a.loadHalf(at: 4)
+            a.jumpIfEqual(low, drop, else: outbound)
         case .sourceAddresses(let addresses):
             let wanted = family == .v4 ? 4 : 16
             let offset = family == .v4 ? L + 12 : L + 8

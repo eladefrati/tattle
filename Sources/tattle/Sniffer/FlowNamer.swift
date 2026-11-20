@@ -216,6 +216,19 @@ struct FlowNamer: Sendable {
         return p.linkSource.map { $0.elementsEqual(hardwareAddress) } ?? false
     }
 
+    /// Whether this Mac sent a packet that is under one of its addresses. Where frames carry
+    /// hardware addresses, one from the interface's own is still not proof: any host on the
+    /// link can write that too, and a frame it sends so reaches this Mac only when addressed
+    /// to this Mac's own hardware address or to a broadcast or multicast one. This Mac
+    /// addresses no frame to itself, and sends to a group address nothing read here (no
+    /// connection, no query to a resolver), so a frame addressed that way is not read as
+    /// sent (ADR-0006). The kernel filter drops it first; this holds when none is installed.
+    private func isSent(_ p: Packet) -> Bool {
+        guard let hardwareAddress else { return true }
+        guard isFromInterface(p), let destination = p.linkDestination, let first = destination.first else { return false }
+        return first & 0x01 == 0 && !destination.elementsEqual(hardwareAddress)
+    }
+
     /// The packet is under one of this Mac's addresses and from a hardware address this namer
     /// does not hold: another host's, or the interface's own since it changed.
     func hardwareSourceUnknown(_ p: Packet) -> Bool {
@@ -228,7 +241,7 @@ struct FlowNamer: Sendable {
         guard !p.src.isLoopback else { return [] }
         // Under this Mac's address but from another host: neither sent nor a reply to it.
         let outbound = local.contains(p.src)
-        guard !outbound || isFromInterface(p) else { return [] }
+        guard !outbound || isSent(p) else { return [] }
         if p.proto == .udp && p.srcPort == 53 && !outbound {
             // Only an answer to a query this Mac sent may name addresses (ADR-0006): from
             // the resolver that was asked, to the port that asked, under the query's id and

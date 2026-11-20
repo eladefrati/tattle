@@ -229,6 +229,93 @@ final class CaptureFilterTests: XCTestCase {
         }
     }
 
+    /// A frame can carry this Mac's hardware address as its source and still be another
+    /// host's: any host on the link can write it there. Such a frame reaches this Mac only
+    /// when it is addressed to this Mac's own hardware address or to a broadcast or multicast
+    /// one, and this Mac addresses no frame to itself and sends to a group address nothing
+    /// the namer reads. So a frame addressed that way is not read as sent: it holds no query
+    /// for a forged reply to answer, renames no open connection and has no Initial decrypted
+    /// (ADR-0006). The same frames to another host's address, as this Mac sends them, are read.
+    func testAFrameUnderThisMacsHardwareAddressToItselfOrAGroupAddressIsNotReadAsSent() throws {
+        let filter = try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkEthernet, direction: .hardwareAddress(mac)))
+        func record(_ hello: [UInt8]) -> [UInt8] { [0x16, 0x03, 0x01, UInt8(hello.count >> 8), UInt8(hello.count & 0xff)] + hello }
+        func segment(flags: UInt8, seq: UInt32, _ payload: [UInt8] = []) -> [UInt8] {
+            [0xd4, 0x31, 0x01, 0xbb, UInt8(seq >> 24), UInt8(seq >> 16 & 0xff), UInt8(seq >> 8 & 0xff), UInt8(seq & 0xff),
+             0, 0, 0, 0, 0x50, flags, 0xff, 0xff, 0, 0, 0, 0] + payload
+        }
+        let forgedHello = SnifferParserTests.clientHello(sni: Array("forged.example".utf8))
+        let initial = SnifferParserTests.sealInitial([0x06, 0x00, 0x40 | UInt8(forgedHello.count >> 8), UInt8(forgedHello.count & 0xff)] + forgedHello)
+        let reply: [UInt8] = [0x12, 0x34, 0x81, 0x80, 0, 1, 0, 1, 0, 0, 0, 0, 3, 0x63, 0x64, 0x6e, 7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 3, 0x6e, 0x65, 0x74, 0, 0, 1, 0, 1,
+                              0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 0x3c, 0, 4] + peerV4
+        let query: [UInt8] = [0x12, 0x34, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0, 3, 0x63, 0x64, 0x6e, 7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 3, 0x6e, 0x65, 0x74, 0, 0, 1, 0, 1]
+        let resolverV6: [UInt8] = [0xfd, 0] + [UInt8](repeating: 0, count: 13) + [1]
+        let notSent: [(String, [UInt8])] = [
+            ("this Mac's own address", mac),
+            ("the broadcast address", [UInt8](repeating: 0xff, count: 6)),
+            ("an IPv4 multicast address", [0x01, 0x00, 0x5e, 0x00, 0x00, 0xfb]),
+            ("an IPv6 multicast address", [0x33, 0x33, 0x00, 0x00, 0x00, 0xfb]),
+        ]
+        for (family, me, peer, resolver) in [(4, myV4, peerV4, [192, 168, 1, 1]), (6, myV6, peerV6, resolverV6)] {
+            func ip(_ proto: UInt8, to dst: [UInt8], _ transport: [UInt8]) -> [UInt8] {
+                family == 4 ? ipv4(from: me, to: dst, proto: proto, transport) : ipv6(from: me, to: dst, proto: proto, transport)
+            }
+            func observe(_ frame: [UInt8], by namer: inout FlowNamer) throws -> [FlowEvent] {
+                namer.observe(try XCTUnwrap(Packet.parse(frame, dlt: PacketCapture.linkEthernet)), at: 1_700_000_000)
+            }
+            func fresh() -> FlowNamer {
+                FlowNamer(localAddresses: [IPAddress(bytes: me)], resolvers: [IPAddress(bytes: resolver)], hardwareAddress: mac)
+            }
+            /// What a forger would send under this Mac's addresses, to a hardware address.
+            func frames(to destination: [UInt8]) -> [(String, [UInt8])] {
+                [("a DNS query", ethernet(from: mac, to: destination, ip(17, to: resolver, udp(sourcePort: 60000, destinationPort: 53, payload: query)))),
+                 ("a SYN", ethernet(from: mac, to: destination, ip(6, to: peer, segment(flags: 0x02, seq: 1)))),
+                 ("a ClientHello", ethernet(from: mac, to: destination, ip(6, to: peer, segment(flags: 0x18, seq: 2, record(forgedHello))))),
+                 ("a QUIC Initial", ethernet(from: mac, to: destination, ip(17, to: peer, udp(sourcePort: 50000, destinationPort: 443, payload: initial))))]
+            }
+            let answer = ethernet(from: otherMac, to: mac, family == 4 ? ipv4(from: resolver, to: me, proto: 17, udp(sourcePort: 53, destinationPort: 60000, payload: reply))
+                                                                       : ipv6(from: resolver, to: me, proto: 17, udp(sourcePort: 53, destinationPort: 60000, payload: reply)))
+            let tcpKey = FlowKey(proto: .tcp, localPort: 0xd431, remote: IPAddress(bytes: peer), remotePort: 443)
+            let udpKey = FlowKey(proto: .udp, localPort: 50000, remote: IPAddress(bytes: peer), remotePort: 443)
+
+            for (what, destination) in notSent {
+                // An open connection of this Mac's, already named, on the ports the forger uses.
+                var namer = fresh()
+                let real = record(SnifferParserTests.clientHello(sni: Array("real.example".utf8)))
+                _ = try observe(ethernet(from: mac, ip(6, to: peer, segment(flags: 0x02, seq: 1))), by: &namer)
+                XCTAssertEqual(try observe(ethernet(from: mac, ip(6, to: peer, segment(flags: 0x18, seq: 2, real))), by: &namer),
+                               [FlowEvent(key: tcpKey, kind: .named("real.example", .sni))])
+                for (kind, frame) in frames(to: destination) {
+                    XCTAssertEqual(Interpreter.run(filter, on: frame), 0, "IPv\(family): the filter drops \(kind) addressed to \(what)")
+                    XCTAssertEqual(try observe(frame, by: &namer), [], "IPv\(family): with no filter the namer does not read \(kind) addressed to \(what)")
+                }
+                XCTAssertEqual(namer.flowCount, 1, "IPv\(family), \(what): no flow opened, and the open one not started over")
+                XCTAssertEqual(namer.queryCount, 0, "IPv\(family), \(what): no query held")
+                _ = try observe(answer, by: &namer)
+                XCTAssertEqual(namer.dnsCount, 0, "IPv\(family), \(what): so the reply sent after it names nothing")
+            }
+
+            // To another host's address, which is where this Mac sends them, all four are read.
+            var namer = fresh()
+            let sent = frames(to: otherMac)
+            for (kind, frame) in sent { XCTAssertEqual(Interpreter.run(filter, on: frame), CaptureFilter.snapLength, "IPv\(family): the filter passes \(kind)") }
+            XCTAssertEqual(try observe(sent[0].1, by: &namer), [])
+            XCTAssertEqual(namer.queryCount, 1, "IPv\(family)")
+            _ = try observe(answer, by: &namer)
+            XCTAssertEqual(namer.dnsCount, 1, "IPv\(family)")
+            XCTAssertEqual(try observe(sent[1].1, by: &namer), [FlowEvent(key: tcpKey, kind: .opened)], "IPv\(family)")
+            XCTAssertEqual(try observe(sent[2].1, by: &namer), [FlowEvent(key: tcpKey, kind: .named("forged.example", .sni))], "IPv\(family)")
+            XCTAssertEqual(try observe(sent[3].1, by: &namer), [FlowEvent(key: udpKey, kind: .opened), FlowEvent(key: udpKey, kind: .named("forged.example", .quic))], "IPv\(family)")
+
+            // An address that differs from this Mac's in its last byte alone is another host's.
+            var neighbour = mac
+            neighbour[5] ^= 0x10
+            XCTAssertEqual(Interpreter.run(filter, on: frames(to: neighbour)[1].1), CaptureFilter.snapLength, "IPv\(family): a neighbour's address")
+            var other = mac
+            other[1] ^= 0x10
+            XCTAssertEqual(Interpreter.run(filter, on: frames(to: other)[1].1), CaptureFilter.snapLength, "IPv\(family): an address that differs early")
+        }
+    }
+
     func testNullLinkFilterTellsDirectionFromAddresses() throws {
         let filter = try XCTUnwrap(CaptureFilter.program(linkType: PacketCapture.linkNull, direction: .sourceAddresses([myV4, myV6])))
         func run(_ frame: [UInt8]) -> UInt32 { Interpreter.run(filter, on: frame) }
