@@ -267,9 +267,13 @@ A name is replaced only where Tattle can tell it from an ordinary word, so some 
   as the Mac, unless `lan` is a search domain. A search domain itself (`corp.example.com`)
   stays; only names under it go. In a startup item they are replaced only as the author's part, and in a process or
   a port they stay. Straight and curly apostrophes count as one; other spellings do not match.
-- An email address is one whose domain ends in letters and does not start with a number, so
-  `python@3.12` and `user@ttys003` stay, and so does an address at a bare name
-  (`name@localhost`).
+- A process's title is cut to the program only when its name holds a space and does not
+  start with `/`. One with no space (`worker:tenant-acme`) goes out whole, and one that
+  starts with `/` (`/opt/bin/worker: tenant acme`) from its last `/` on.
+- An email address is a name, an `@` and a dotted name whose last part is letters and whose
+  first part is not a number, so `python@3.12`, `pkg@1.2.3` and `user@ttys003` stay, and so
+  does an address at a bare name (`name@localhost`). Anything of that shape is replaced,
+  an address or not: `pkg@latest.tgz` reads `<email>`.
 - A path loses its folders only where Tattle holds it whole: a program's, a plist's, a file a
   startup item watches. A path inside other text, such as a reason macOS gave, keeps them.
   There, a disk's name with spaces or punctuation is replaced whole only while the disk is

@@ -122,6 +122,15 @@ final class ProcessTableTests: XCTestCase {
         XCTAssertEqual(named(": appuser payroll_prod").program, "postgres", "nothing before the colon: the file")
         XCTAssertEqual(named(": appuser payroll_prod", path: nil, command: "postgres").program, "postgres", "or the kernel's name")
 
+        // A title is told from a name or a path by a space and no leading slash, so these go
+        // out as they are named.
+        let slashed = named("/opt/bin/worker: tenant acme", path: "/opt/bin/worker", command: "worker")
+        XCTAssertEqual(slashed.name, "worker: tenant acme")
+        XCTAssertNil(slashed.program)
+        let oneWord = named("worker:tenant-acme", path: "/opt/bin/worker", command: "worker")
+        XCTAssertEqual(oneWord.name, "worker:tenant-acme")
+        XCTAssertNil(oneWord.program)
+
         XCTAssertNil(ProcessEntry.name(path: "/bin/zsh", arguments: ["-zsh"], command: "zsh").program, "a name is not a title")
         XCTAssertNil(ProcessEntry.name(path: "/x/My Tool", arguments: ["/x/My Tool"], command: "My Tool").program, "nor is a path with a space")
         XCTAssertNil(ProcessEntry.name(path: "/usr/bin/python3", arguments: ["python3", "/x/my script.py"], command: "python3").program, "nor a script's file name")

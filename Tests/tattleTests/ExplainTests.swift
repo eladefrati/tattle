@@ -212,6 +212,10 @@ final class RedactorTests: XCTestCase {
             ("sshd-session: other@ttys003", "sshd-session: other@ttys003"),
             ("name@localhost", "name@localhost"),
             ("@example.com and name@", "@example.com and name@"),
+            // Whatever has the shape is read as one: a first label that only starts with a
+            // digit, a file's extension.
+            ("name@3com.example", "<email>"),
+            ("npm exec pkg@latest.tgz", "npm exec <email>"),
         ]
         for (input, expected) in rows {
             for context in [Redactor.Context.program, .launchItem, .host] {

@@ -232,9 +232,10 @@ struct Redactor: Sendable {
         return Self.redactAddresses(out, spelledWithHyphens: captured)
     }
 
-    /// An email address, whoever's: a cloud drive names its folder with one. The domain ends in
-    /// letters and does not start with a number, so a package's version ("python@3.12",
-    /// "pkg@1.2.3") and a login at a terminal ("user@ttys003") are not one.
+    /// An email address, whoever's: a cloud drive names its folder with one. The domain's last
+    /// label is letters and its first is not a number, so a package's version ("python@3.12",
+    /// "pkg@1.2.3") and a login at a terminal ("user@ttys003") are not one. Whatever else has
+    /// the shape is read as one ("pkg@latest.tgz").
     private static let email = "(?<![\\w.%+-])[\\w.%+-]+@(?!\\d+\\.)(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}(?![\\w-])"
 
     /// Where a text can say it is this Mac. A host is, only when all of it is one of the Mac's
