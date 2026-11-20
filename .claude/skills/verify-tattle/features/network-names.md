@@ -269,12 +269,31 @@ Preconditions:
   capture no longer than 1,448 bytes. A name read from a cut segment
   (`testASegmentCutByTheSnapLengthEndsBuffering`), a handshake in a SYN
   (`testAHelloInTheSYNNamesTheFlow`), an address for a name
-  (`testNamesThatFailValidationLeaveTheFlowUnnamed`, which also has the reason for a Host
-  header that is an address), the wait after a failed read
+  (`testNamesThatFailValidationLeaveTheFlowUnnamed`), the wait after a failed read
   (`testAFailedReadWaitsLongerEachTimeBeforeReopening`) and the reopening without one when
   the route has left the interface
   (`testAFailedReadOnAnInterfaceTheRouteHasLeftReopensAtOnce`) rest on the unit tests: none
   can be made to happen on demand with the hosts and bytes `connect` may send.
+- A Host header that is an address, and frames not read as sent, proven 2026-11-20 on the
+  development Mac with the broker, dev copy at the commit titled `fix(sniffer): do not read
+  as sent a frame from this Mac's hardware address that is addressed to it or to a group
+  address`, run `2026-11-20T001117`. One request `connect` does not send:
+  `{ printf 'GET / HTTP/1.1\r\nHost: <ip>\r\n\r\n'; sleep 60; } | nc -G 5 -p <port> <ip> 80`,
+  `<ip>` being example.com's address, looked up over TCP as `connect` does. Its row is
+  titled by the address; the detail reads
+  `No name the HTTP request's Host header was not a host name`, history
+  `none:no-host-name`, the log `no name for tcp/<port>><ip>:80: noHostName`.
+  The kernel took the program that drops a frame from the interface's hardware address
+  addressed to that address or to a group one (no `kernel filter rejected`), and names were
+  still read: a lookup of github.com through the system's resolver and `nc` to its port 22
+  gave `github.com, from DNS`, `connect named` gave `example.com | http`, and of this Mac's
+  own connections to the internet opened after the run's first seconds all 37 over TCP and
+  all 27 over UDP were named from the wire (49 of 49 and 78 of 78 in the eleven minutes
+  before the change, run `2026-11-19T235909`). In that run a temporary line counted the
+  frames the sniffer read as sent: 14,412, none addressed to the interface's own address or
+  to a broadcast or multicast one, on the one link the Mac was on. A forged frame cannot be
+  sent to the Mac on demand: that such a frame is not read rests on
+  `testAFrameUnderThisMacsHardwareAddressToItselfOrAGroupAddressIsNotReadAsSent`.
 - DNS replies bounded, proven 2026-11-10 on the development Mac with the broker, dev copy at
   `c8d4028`, run `2026-11-10T163829`: `nc` to example.com shows `Name from the HTTP request`,
   and with no traffic made for it an `ssh` to `140.82.113.3:22` was logged `notHandshake` and
