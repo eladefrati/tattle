@@ -116,6 +116,14 @@ Preconditions:
     `Parent` reads `postgres` too, and `$V db "select pattern from rule where source = 'llm'"`
     holds `postgres`, not the title. What the redaction does inside a title (the login, a
     disk's name, a one-letter login) no longer reaches a prompt and rests on unit tests;
+  - the same title on a process no app holds, with a connection: a launch agent, loaded with
+    `launchctl bootstrap gui/<uid> <plist>` from a plist outside `~/Library/LaunchAgents` and
+    removed with `launchctl bootout`, running a script that pipes `connect named`'s request
+    and a `sleep` into `(exec -a '<title>' /usr/bin/nc -G 5 example.com 80)`. Keep the command
+    in the script: PlistBuddy drops its quotes. Network, row `<title>, 1 to the internet`
+    (the `First contact` row starts `<title> to`), `Explain`: the detail keeps the title, the
+    prompt's key reads `postgres` and so does the stored pattern; in Processes, row
+    `<script's name>,` then the title, the detail shows that answer;
   - label `com.<login>.proof`: the key reads `com.<user>.proof` and `Plist`
     `<home>/Library/LaunchAgents/com.<user>.proof.plist`; label `com.<machine name>.proof` reads
     `com.<machine>.proof` in both; `org` and `net` read the same; label `dev.<login>.proof`
@@ -135,6 +143,10 @@ Preconditions:
     `~/<a folder>/inbox` (`WatchPaths`): the panel shows each path whole; in the prompt `Runs`
     reads `<home>/<folders>/tool (1 argument, not sent)`, `When` `when <home>/<folders>/inbox
     changes`, and `Plist` `<home>/Library/LaunchAgents/<label>.plist`, macOS's own folders kept;
+  - a plist watching `~/Volumes/<a name>` and `~/Users/<a name>`: `When` reads `when
+    <home>/Volumes/<volume>, <home>/Users/<other-user> change`;
+  - a plist with 16,000 `WatchPaths` under the home: `Explain` is answered within seconds,
+    and the prompt's `When` is the first 500 characters of the cut paths and ` <cut>`;
   - a plist labelled `proof for name@example.com`: the key reads `proof for <email>`; one
     labelled `com.proof.tool@1.2.3` stays whole;
   - a plist whose label is 600 letters: the key is its first 500 and ` <cut>`, and the
@@ -337,6 +349,17 @@ Preconditions:
   Packet capture was off there, so the row and the key were the address. A titled parent's
   `Parent`, a titled listener's key, another account's folder, a disk's and the hourly
   deletion of expired answers rest on unit tests.
+- A titled process's Network row, a watched disk or account under the home and 16,000
+  watched paths proven 2026-11-20 on the test Mac, dev copy at the commit titled `docs(readme):
+  say which titles are cut to the program and what reads as an email address, and pin both
+  in tests`, both runs
+  copied to `build/verify/runs/test-mac-2026-11-20/`. Run `2026-11-20T000704`: the Network
+  row and its detail kept the title, the prompt's key and the stored pattern read `postgres`,
+  and the process's Processes detail showed that answer. Run `2026-11-20T000434`: `When`
+  read `when <home>/Volumes/<volume>, <home>/Users/<other-user> change`, and the item with
+  16,000 watched paths was answered 3.7 s after `Explain`. An answer that was not kept
+  standing in for the unconfirmed one asked again rests on unit tests: no row there carries
+  a name under a search domain.
 - A host name only the network resolves (`.local`, a search domain, no dot) going out as
   `<private-host>` and keeping no answer rests on unit tests
   (`testAHostNameOnlyThisNetworkResolvesIsReplaced`,
