@@ -20,26 +20,30 @@ private struct ConnectionsList: View {
     var body: some View {
         let fresh = snapshot.connections.filter(\.isNew).sorted { $0.connection.firstSeen > $1.connection.firstSeen }
         let seen = NetworkSnapshot(connections: snapshot.connections.filter { !$0.isNew }, takenAt: snapshot.takenAt)
+        let summary = ListSummary(network: snapshot, observer: state.network)
         VStack(alignment: .leading, spacing: 0) {
-            Text(summary)
-                .font(PanelFont.small)
-                .foregroundStyle(PanelColor.sub)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 12 + PanelLook.titleInset)
-                .padding(.bottom, 10)
+            // On glass the summary is at the bottom of the panel, and only what went wrong
+            // stays above the list.
+            if let line = PanelLook.glass ? state.network.accessError : summary.full {
+                Text(line)
+                    .font(PanelFont.small)
+                    .foregroundStyle(PanelColor.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12 + PanelLook.titleInset)
+                    .padding(.bottom, 10)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if !fresh.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionTitle(title: "First contact", marked: true)
+                        PanelSection(title: "First contact", marked: true) {
                             CardRows(items: fresh) { live in
                                 NavRow(route: .connection(live)) { FirstContactRow(live: live, now: snapshot.takenAt, state: state) }
                             }
                         }
                     }
                     if !seen.connections.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionTitle(title: "Seen before", trailing: seen.connections.count == 1 ? "1 connection" : "\(seen.connections.count) connections")
+                        PanelSection(title: "Seen before", trailing: seen.connections.count == 1 ? "1 connection" : "\(seen.connections.count) connections",
+                                     follows: !fresh.isEmpty) {
                             CardRows(items: seen.groups) { group in
                                 // The page is the app's, with every connection it has open.
                                 NavRow(route: .connectionGroup(snapshot.group(id: group.id) ?? group)) { ConnectionGroupRow(group: group) }
@@ -52,12 +56,17 @@ private struct ConnectionsList: View {
             }
         }
     }
+}
 
-    private var summary: String {
+extension ListSummary {
+    @MainActor
+    init(network snapshot: NetworkSnapshot, observer network: NetworkObserver) {
         let groups = snapshot.groups.count
-        var parts = ["\(snapshot.connections.count) open from \(groups) \(groups == 1 ? "app" : "apps")"]
+        let apps = "\(groups) \(groups == 1 ? "app" : "apps")"
+        var parts = ["\(snapshot.connections.count) open from \(apps)"]
+        var few = ["\(snapshot.connections.count) open", apps]
         if snapshot.preExistingCount > 0 { parts.append("\(snapshot.preExistingCount) open since before Tattle started") }
-        switch captureStatus {
+        switch network.captureStatus {
         case .capturing:
             var named: [String] = []
             if snapshot.namedCount > 0 { named.append("\(snapshot.namedCount) named") }
@@ -65,11 +74,12 @@ private struct ConnectionsList: View {
             if snapshot.relayedCount > 0 { named.append("\(snapshot.relayedCount) relayed") }
             if snapshot.hiddenCount > 0 { named.append("\(snapshot.hiddenCount) with the name hidden") }
             parts.append(named.isEmpty ? "Names appear as connections open" : named.joined(separator: ", "))
-            if let error = state.network.accessError { parts.append(error) }
+            if snapshot.namedCount > 0 { few.append("\(snapshot.namedCount) named") }
+            if let error = network.accessError { parts.append(error) }
         case .unavailable, .stopped:
-            parts.append(PacketAccessView.namesOff(state.network.broker.installation))
+            parts.append(PacketAccessView.namesOff(network.broker.installation))
         }
-        return parts.joined(separator: " \u{00B7} ")
+        self.init(short: few.joined(separator: " \u{00B7} "), full: parts.joined(separator: " \u{00B7} "))
     }
 }
 

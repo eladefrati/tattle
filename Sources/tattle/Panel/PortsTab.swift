@@ -28,11 +28,11 @@ private struct PortsList: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(PortItem.Group.allCases, id: \.self) { group in
+                let shown = PortItem.Group.allCases.filter { !snapshot.items(in: $0).isEmpty }
+                ForEach(shown, id: \.self) { group in
                     let items = snapshot.items(in: group)
                     if !items.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionTitle(title: group.title, description: group.description)
+                        PanelSection(title: group.title, description: group.description, follows: group != shown.first) {
                             CardRows(items: items) { item in
                                 NavRow(route: .port(item)) { PortRow(item: item) }
                             }
@@ -43,6 +43,20 @@ private struct PortsList: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 4)
         }
+    }
+}
+
+extension ListSummary {
+    init(ports snapshot: PortsSnapshot) {
+        let reachable = snapshot.items(in: .network).count
+        let groups = PortItem.Group.allCases.compactMap { group -> String? in
+            let count = snapshot.items(in: group).count
+            return count == 0 ? nil : "\(count) \(group.title.prefix(1).lowercased() + group.title.dropFirst())"
+        }
+        var few = ["\(snapshot.items.count) listening"]
+        if reachable > 0 { few.append("\(reachable) reachable from your network") }
+        self.init(short: few.joined(separator: " \u{00B7} "),
+                  full: groups.isEmpty ? few[0] : "\(snapshot.items.count) listening: \(groups.joined(separator: ", "))")
     }
 }
 

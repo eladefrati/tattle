@@ -39,15 +39,8 @@ private struct ProcessesList: View {
                 if PanelLook.glass {
                     // The columns' titles sort, as in Activity Monitor, and sit on the line
                     // just above the rows' figures.
+                    // How many there are is at the bottom of the panel.
                     HStack(alignment: .lastTextBaseline, spacing: 0) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(snapshot.groups.count) apps and programs, \(snapshot.items.count) processes")
-                                .accessibilityAddTraits(.isHeader)
-                            Text("Each app with its helpers, each program with what it started. Everything that is part of macOS is one row.")
-                                .font(PanelFont.small)
-                                .foregroundStyle(PanelColor.sub)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
                         Spacer(minLength: 12)
                         sortTitle(.memory).frame(width: 64, alignment: .trailing)
                         sortTitle(.cpu).frame(width: 44, alignment: .trailing)
@@ -57,12 +50,13 @@ private struct ProcessesList: View {
                     .padding(.leading, 10)
                     .padding(.trailing, 25)
                 } else {
+                    let summary = ListSummary(processes: snapshot)
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(snapshot.groups.count) apps and programs, \(snapshot.items.count) processes")
+                            Text(summary.short)
                                 .fontWeight(.semibold)
                                 .accessibilityAddTraits(.isHeader)
-                            Text("Each app with its helpers, each program with what it started. Everything that is part of macOS is one row.")
+                            Text(ListSummary.processesExplained)
                                 .font(PanelFont.small)
                                 .foregroundStyle(PanelColor.sub)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -94,6 +88,15 @@ private struct ProcessesList: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 4)
         }
+    }
+}
+
+extension ListSummary {
+    static let processesExplained = "Each app with its helpers, each program with what it started. Everything that is part of macOS is one row."
+
+    init(processes snapshot: ProcessSnapshot) {
+        let count = "\(snapshot.groups.count) apps and programs, \(snapshot.items.count) processes"
+        self.init(short: count, full: "\(count). \(Self.processesExplained)")
     }
 }
 

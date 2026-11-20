@@ -83,8 +83,18 @@ generic record class in place of the private ones (`Startup/LoginItems.swift`).
 
 The panel has two looks, chosen by the macOS version it runs on (`PanelLook` in
 `Panel/PanelStyle.swift`). From macOS 26 it is drawn on the system's glass: rows lie on the
-window, text takes the system's label colours, the tabs are one glass capsule, and the
-readings have no box around them. Before macOS 26 it keeps its own opaque colours and cards.
+window, text takes the system's label colours, the tabs have nothing behind them but a pill
+on the selected one, and the readings have no box around them. On glass the panel is dark
+whatever the Mac's appearance and the Appearance setting, as a Control Center panel is; a
+line sets each group of rows apart from the one above, and a group's title folds its rows
+away until the app quits; a row with no app icon has a round badge; a page slides in over
+the one it came from; and Settings and Quit are a gear and a power symbol. Each list's
+summary is a few words at the bottom of the panel, with the whole line as their tooltip and
+accessibility label, and what a group holds is its title's tooltip and accessibility value;
+only an error from packet access stays above the Network list.
+Only what the user does moves: no reading animates when it changes, and with Reduce Motion
+nothing slides or folds with a spring.
+Before macOS 26 it keeps its own opaque colours and cards.
 Both looks give the controls and readings the same accessibility labels.
 
 ## Knowledge base
@@ -158,5 +168,6 @@ Publishing the draft tags the commit it was built from.
 
 The app icon is an eye, drawn in `Resources/AppIcon.svg`. `make icon` redraws
 `Resources/AppIcon.icns` from it with `sips` and `iconutil`; the `.icns` is committed, so a
-build does not depend on either. The menu bar item shows the same eye in one colour, drawn
-in code (`MenuBarGlyph`) as a template image, and struck through when Tattle failed to start.
+build does not depend on either. The menu bar item shows a mark of its own, two crossed
+leaves around a ring, drawn in code (`MenuBarGlyph`) as a template image, and struck through
+when Tattle failed to start.

@@ -16,11 +16,13 @@ enum PanelColor {
     static let panel = dynamic(light: rgb(0xF3F3F5), dark: rgb(0x232326))
     /// What the panel's pages lie on. On glass, a wash of the window's own colour keeps text
     /// legible over whatever is behind it; before that, the panel's own colour.
-    static let background = PanelLook.glass ? Color(nsColor: .windowBackgroundColor).opacity(0.42) : panel
+    static let background = PanelLook.glass ? Color.clear : panel
     // On glass, text and fills come from the system's own label colours, which stay legible
     // over whatever shows through.
     static let card = PanelLook.glass ? Color.primary.opacity(0.05) : dynamic(light: rgb(0xFFFFFF), dark: rgb(0x2E2E32))
     static let fill = PanelLook.glass ? Color.primary.opacity(0.08) : dynamic(light: black(0.055), dark: white(0.08))
+    /// The round badge of a row that has no app icon, on glass.
+    static let badge = Color.primary.opacity(0.16)
     static let tabs = dynamic(light: black(0.035), dark: white(0.05))
     static let selectedTab = dynamic(light: black(0.09), dark: white(0.13))
     static let text = PanelLook.glass ? Color.primary : dynamic(light: rgb(0x1D1D1F), dark: rgb(0xF5F5F7))
@@ -161,24 +163,91 @@ struct NavRow<Content: View>: View {
     }
 }
 
-/// The title over a card of rows, with an optional line of explanation.
+/// A titled group of rows in a list. On glass a line sets it apart from the group above it and
+/// its title folds its rows away, as a group in a Control Center panel does.
+struct PanelSection<Content: View>: View {
+    let title: String
+    var description: String?
+    var trailing: String?
+    var marked = false
+    /// Whether another group lies above this one.
+    var follows = false
+    @ViewBuilder var content: Content
+    @Environment(PanelRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if PanelLook.glass {
+            let folded = router.folded.contains(title)
+            VStack(alignment: .leading, spacing: 6) {
+                if follows {
+                    RowLine().padding(.horizontal, PanelLook.titleInset).padding(.bottom, 6)
+                }
+                SectionTitle(title: title, description: folded ? nil : description, trailing: trailing, marked: marked, folded: folded) {
+                    // Only the fold moves: the rows' own readings never animate.
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.1)) {
+                        if folded { router.folded.remove(title) } else { router.folded.insert(title) }
+                    }
+                }
+                if !folded {
+                    content.transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                SectionTitle(title: title, description: description, trailing: trailing, marked: marked)
+                content
+            }
+        }
+    }
+}
+
+/// What a list holds, in a line: in the few words that fit at the bottom of the panel on
+/// glass, and in full for a pointer held over them and for VoiceOver.
+struct ListSummary {
+    let short: String
+    let full: String
+}
+
+/// The title over a card of rows, with an optional line of explanation. With `fold`, the title
+/// is a button that folds its rows away and carries an arrow that says which way they are, and
+/// the explanation is its tooltip.
 struct SectionTitle: View {
     let title: String
     var description: String?
     var trailing: String?
     var marked = false
+    var folded = false
+    var fold: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                if marked {
-                    Circle().fill(PanelColor.newDot).frame(width: 7, height: 7).accessibilityHidden(true)
+                if let fold {
+                    Button(action: fold) {
+                        HStack(spacing: 6) {
+                            name
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8.5, weight: .bold))
+                                .rotationEffect(.degrees(folded ? 0 : 90))
+                                .accessibilityHidden(true)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(description ?? "")
+                    .accessibilityLabel(title)
+                    // The explanation is not on screen where the title folds, so it is here
+                    // for the accessibility tree, as the pointer has it in the tooltip.
+                    .accessibilityValue(folded ? "Folded" : description ?? "")
+                    .accessibilityAddTraits(.isHeader)
+                } else {
+                    name
                 }
-                Text(title).font(PanelFont.smallBold).accessibilityAddTraits(.isHeader)
                 Spacer()
                 if let trailing { Text(trailing).font(PanelFont.small) }
             }
-            if let description {
+            if let description, fold == nil {
                 Text(description)
                     .font(PanelFont.small)
                     .fixedSize(horizontal: false, vertical: true)
@@ -186,6 +255,13 @@ struct SectionTitle: View {
         }
         .foregroundStyle(PanelColor.sub)
         .padding(.horizontal, PanelLook.titleInset)
+    }
+
+    @ViewBuilder private var name: some View {
+        if marked {
+            Circle().fill(PanelColor.newDot).frame(width: 7, height: 7).accessibilityHidden(true)
+        }
+        Text(title).font(PanelFont.smallBold).accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -220,18 +296,19 @@ struct IconTile: View {
             if let icon = Self.icon(path) {
                 Image(nsImage: icon).resizable().interpolation(.high)
             } else if PanelLook.glass {
-                // A neutral tile with the letter in capitals, or Apple's logo for the macOS row.
-                RoundedRectangle(cornerRadius: size / 4, style: .continuous)
-                    .fill(PanelColor.fill)
+                // A round badge, as a Control Center row's: the letter in capitals, or Apple's
+                // logo for the macOS row.
+                Circle()
+                    .fill(PanelColor.badge)
                     .overlay {
                         if name == "macOS" {
                             Image(systemName: "apple.logo")
                                 .font(.system(size: size / 2, weight: .medium))
-                                .foregroundStyle(PanelColor.sub)
+                                .foregroundStyle(PanelColor.text.opacity(0.85))
                         } else {
                             Text(name.prefix(1).uppercased())
                                 .font(.system(size: size / 2, weight: .semibold, design: .rounded))
-                                .foregroundStyle(PanelColor.sub)
+                                .foregroundStyle(PanelColor.text.opacity(0.85))
                         }
                     }
             } else {

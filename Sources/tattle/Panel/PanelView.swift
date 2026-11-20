@@ -24,10 +24,12 @@ enum PanelRoute: Hashable {
     }
 }
 
-/// The pages open over the list, oldest first.
+/// The pages open over the list, oldest first, and the groups folded away in the lists.
 @MainActor @Observable
 final class PanelRouter {
     var path: [PanelRoute] = []
+    /// The titles of the groups whose rows are folded away, kept while the app runs.
+    var folded: Set<String> = []
 
     func push(_ route: PanelRoute) { path.append(route) }
     func pop() { if !path.isEmpty { path.removeLast() } }
@@ -48,7 +50,8 @@ struct PanelView: View {
             case .network: "globe"
             case .processes: "cpu"
             case .ports: "door.left.hand.open"
-            case .startup: "power"
+            // On glass the power symbol is Quit's, at the bottom of the panel.
+            case .startup: PanelLook.glass ? "sun.max" : "power"
             }
         }
     }
@@ -58,18 +61,26 @@ struct PanelView: View {
     @State private var router = PanelRouter()
     @Namespace private var tabSelection
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
             // Every page stays alive under the one on top, so a list keeps reading and keeps
             // its place while a page is open over it.
+            // On glass a page slides in over the one it came from, which steps aside.
+            let slides = PanelLook.glass && !reduceMotion
             ZStack {
                 list.shown(router.path.isEmpty)
+                    .offset(x: slides && !router.path.isEmpty ? -Self.stepAside : 0)
                 ForEach(Array(router.path.enumerated()), id: \.offset) { index, route in
+                    let top = index == router.path.count - 1
                     page(route, back: index == 0 ? tab.rawValue : router.path[index - 1].title)
-                        .shown(index == router.path.count - 1)
+                        .shown(top)
+                        .offset(x: slides && !top ? -Self.stepAside : 0)
+                        .transition(slides ? .move(edge: .trailing).combined(with: .opacity) : .identity)
                 }
             }
+            .animation(slides ? .snappy(duration: 0.28) : nil, value: router.path.count)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if PanelLook.glass { RowLine().padding(.horizontal, 12) }
             footer
@@ -81,6 +92,9 @@ struct PanelView: View {
         .background(PanelColor.background)
         .background(WindowOnScreenReader { state.panelIsShowing = $0 })
     }
+
+    /// How far a page moves to the side when another opens over it.
+    private static let stepAside: CGFloat = 60
 
     private var list: some View {
         VStack(spacing: 0) {
@@ -102,8 +116,8 @@ struct PanelView: View {
         }
     }
 
-    /// The tabs from macOS 26: one glass capsule holding the four, the selected one a raised
-    /// pill that slides to wherever it is picked.
+    /// The tabs from macOS 26: the four in a row on the window with nothing behind them, the
+    /// selected one a raised pill that slides to wherever it is picked.
     @available(macOS 26.0, *)
     private var glassTabs: some View {
         HStack(spacing: 0) {
@@ -136,8 +150,9 @@ struct PanelView: View {
                         if selected {
                             Capsule()
                                 .fill(.primary.opacity(0.13))
-                                .overlay { Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.5) }
-                                .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
+                                // A whole point wide: half a point is half a pixel on a display
+                                // that is not Retina, where the bottom of the outline went missing.
+                                .overlay { Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 1) }
                                 .matchedGeometryEffect(id: "selection", in: tabSelection)
                         }
                     }
@@ -149,11 +164,9 @@ struct PanelView: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        // Only the capsule animates the change, so the pill slides while the list and the
-        // footer switch at once.
+        // Only the row animates the change, so the pill slides while the list and the footer
+        // switch at once.
         .animation(.snappy(duration: 0.3, extraBounce: 0.12), value: tab)
-        .padding(4)
-        .glassEffect(.regular.interactive(), in: .capsule)
     }
 
     /// The tabs before macOS 26.
@@ -220,7 +233,7 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack {
-            Button("Settings\u{2026}") {
+            Button {
                 // The panel is the key window while open; it must go before the
                 // settings window takes focus, or both stay on screen.
                 NSApplication.shared.keyWindow?.close()
@@ -229,6 +242,17 @@ struct PanelView: View {
                 // open, so opening it again does nothing: bring it forward.
                 NSApplication.shared.activate()
                 NSApplication.shared.windows.first { $0.identifier?.rawValue.contains("Settings") == true }?.makeKeyAndOrderFront(nil)
+            } label: {
+                if PanelLook.glass {
+                    FooterSymbol(name: "gearshape")
+                } else {
+                    Text("Settings\u{2026}")
+                }
+            }
+            .accessibilityLabel("Settings\u{2026}")
+            .help(PanelLook.glass ? "Settings" : "")
+            if PanelLook.glass, router.path.isEmpty {
+                FooterSummary(tab: tab, state: state)
             }
             Spacer()
             if tab == .network, router.path.isEmpty {
@@ -242,9 +266,9 @@ struct PanelView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                Spacer()
+                if !PanelLook.glass { Spacer() }
             }
-            QuitButton()
+            QuitButton(symbolOnly: PanelLook.glass)
         }
         .buttonStyle(FooterButtonStyle())
         .foregroundStyle(PanelColor.sub)
@@ -274,20 +298,66 @@ private struct FooterButtonStyle: ButtonStyle {
     }
 }
 
-/// Quit, with its shortcut beside it.
+/// The list's summary in a few words; the whole of it for a pointer held here and for
+/// VoiceOver. A view of its own, so that a new reading redraws these words and not the panel.
+private struct FooterSummary: View {
+    let tab: PanelView.Tab
+    let state: AppState
+
+    var body: some View {
+        if let summary {
+            Text(summary.short)
+                .font(PanelFont.small)
+                .monospacedDigit()
+                .lineLimit(1)
+                .help(summary.full)
+                .accessibilityLabel(summary.full)
+        }
+    }
+
+    private var summary: ListSummary? {
+        switch tab {
+        case .network: state.panelNetworkSnapshot.map { ListSummary(network: $0, observer: state.network) }
+        case .processes: state.processes.snapshot.map { ListSummary(processes: $0) }
+        case .ports: state.ports.snapshot.map { ListSummary(ports: $0) }
+        case .startup: state.startup.snapshot.map { ListSummary(startup: $0) }
+        }
+    }
+}
+
+/// A symbol that stands for a word at the bottom of the panel.
+private struct FooterSymbol: View {
+    let name: String
+
+    var body: some View {
+        Image(systemName: name)
+            .font(.system(size: 13, weight: .medium))
+            .frame(width: 18, height: 18)
+            .contentShape(Rectangle())
+    }
+}
+
+/// Quit, with its shortcut beside it, or as the power symbol alone.
 private struct QuitButton: View {
+    var symbolOnly = false
+
     var body: some View {
         Button {
             NSApplication.shared.terminate(nil)
         } label: {
-            HStack(spacing: 8) {
-                Text("Quit Tattle")
-                Text("\u{2318}Q").font(PanelFont.small).accessibilityHidden(true)
+            if symbolOnly {
+                FooterSymbol(name: "power")
+            } else {
+                HStack(spacing: 8) {
+                    Text("Quit Tattle")
+                    Text("\u{2318}Q").font(PanelFont.small).accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
         }
         .keyboardShortcut("q")
         .accessibilityLabel("Quit Tattle")
+        .help(symbolOnly ? "Quit Tattle (\u{2318}Q)" : "")
     }
 }
 
@@ -327,6 +397,8 @@ private struct WindowOnScreenReader: NSViewRepresentable {
             for observer in observers { center.removeObserver(observer) }
             observers = []
             guard let window else { return }
+            // On glass the panel is dark whatever the Mac's appearance, as Control Center's are.
+            if PanelLook.glass { window.appearance = NSAppearance(named: .darkAqua) }
             observers = [
                 center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.reportOcclusion() }
