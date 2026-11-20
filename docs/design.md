@@ -29,6 +29,11 @@ Every surface runs the same pipeline on a different source:
   comes or it is ten seconds old, and nothing of it past its next pass over its tables,
   about once a second; the capture's read buffer holds the packets last read, a query
   among them, until a later read overwrites them. A query is never shown, logged or stored
+  ([ADR-0006](adr/0006-dns-replies-matched-to-queries.md)). When a capture opens and at
+  each check of the interface, the sniffer reads the gateway's hardware address from the
+  system's neighbour table: a frame from this Mac's hardware address to a broadcast or
+  multicast one is not read as sent, since another host can send it, except where the
+  gateway answers at such an address and everything sent past the link goes to one
   ([ADR-0006](adr/0006-dns-replies-matched-to-queries.md)). The sniffer gets its
   capture descriptor from the broker (Privileges).
 
