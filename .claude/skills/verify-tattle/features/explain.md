@@ -336,31 +336,26 @@ Preconditions:
   development Mac, the only one with either, run `2026-11-08T185833`. A host's whole-name rule, a
   tailnet name, an address spelled with hyphens and a public bound address rest on unit tests:
   `connect` reaches only its approved hosts, and neither Mac holds a public address.
-- What the prompt leaves out and forgetting an answer proven 2026-11-19 on the test Mac, dev
-  copy built from the sources of the commit titled `fix(explain): prune expired unconfirmed
-  answers every hour while the app runs`, both runs copied to
-  `build/verify/runs/test-mac-2026-11-19/`. Run `2026-11-19T221531`, a titled process: the
-  row and the detail kept the title, the prompt's key and `Process` read `postgres`, and the
-  stored pattern was `postgres`; then `Confirm`, `Forget…`, `Cancel` (the row still stored),
-  `Forget…`, `Forget answer` (`No explanation yet.`, no row) and `Explain` again (a new
-  unconfirmed row). In the same run, a startup item's program, watched path and plist, an
-  email address in a label and a 600-letter label. Run `2026-11-19T221359`, a first contact:
-  its row read `No name seen`, then `Model answer, confirmed by you` after `Confirm` and
-  `Back`, then `No name seen` again after `Forget answer` and `Back`, with no row left.
-  Packet capture was off there, so the row and the key were the address. A titled parent's
-  `Parent`, a titled listener's key, another account's folder, a disk's and the hourly
-  deletion of expired answers rest on unit tests.
-- A titled process's Network row, a watched disk or account under the home and 16,000
-  watched paths proven 2026-11-20 on the test Mac, dev copy at the commit titled `docs(readme):
-  say which titles are cut to the program and what reads as an email address, and pin both
-  in tests`, both runs
-  copied to `build/verify/runs/test-mac-2026-11-20/`. Run `2026-11-20T000704`: the Network
-  row and its detail kept the title, the prompt's key and the stored pattern read `postgres`,
-  and the process's Processes detail showed that answer. Run `2026-11-20T000434`: `When`
-  read `when <home>/Volumes/<volume>, <home>/Users/<other-user> change`, and the item with
-  16,000 watched paths was answered 3.7 s after `Explain`. An answer that was not kept
-  standing in for the unconfirmed one asked again rests on unit tests: no row there carries
-  a name under a search domain.
+- What the prompt leaves out and forgetting an answer proven 2026-11-20 on the test Mac, dev
+  copy at the commit titled `fix(explain): put Forget… after Ask again and Confirm`, the
+  three runs copied to `build/verify/runs/test-mac-2026-11-20/`.
+  Run `2026-11-20T002532`, a titled process: the row and the detail kept the title, the
+  prompt's key and `Process` read `postgres`, and the stored pattern was `postgres`; then
+  `Confirm`, `Forget…`, `Cancel` (the row still stored), `Forget…`, `Forget answer` (`No
+  explanation yet.`, no row) and `Explain` again (a new unconfirmed row, with `Ask again`,
+  `Confirm` and `Forget…` in that order). In the same run, a startup item's program, watched
+  path and plist, an email address in a label and a 600-letter label. Run
+  `2026-11-20T002406`, a first contact: its row read `No name seen`, then `Model answer,
+  confirmed by you` after `Confirm` and `Back`, then `No name seen` again after `Forget
+  answer` and `Back`, with no row left. Packet capture was off there, so the row and the key
+  were the address. Run `2026-11-20T002657`: a titled process's Network row and its detail
+  kept the title, the prompt's key and the stored pattern read `postgres`, and the process's
+  Processes detail showed that answer; a watched disk and account under the home read `when
+  <home>/Volumes/<volume>, <home>/Users/<other-user> change`; and an item with 16,000
+  watched paths was answered 3.3 s after `Explain`. A titled parent's `Parent`, a titled
+  listener's key, another account's folder, a disk's, the hourly deletion of expired answers
+  and an answer that was not kept standing in for the unconfirmed one asked again rest on
+  unit tests; for the last, no row there carries a name under a search domain.
 - A host name only the network resolves (`.local`, a search domain, no dot) going out as
   `<private-host>` and keeping no answer rests on unit tests
   (`testAHostNameOnlyThisNetworkResolvesIsReplaced`,
