@@ -45,11 +45,21 @@ wire name exists, and marked "from DNS".
   and addressed to another host's. Any host on the link can write this Mac's hardware
   address as a frame's source, but such a frame reaches this Mac only when it is addressed
   to this Mac's own address or to a broadcast or multicast one, and a frame addressed so is
-  not read as sent: this Mac sends nothing so addressed that the sniffer reads. The same
-  test stands before every packet read as sent, a connection's first packets included.
+  not read as sent. The same test stands before every packet read as sent, a connection's
+  first packets included.
+- A network whose gateway answers at a broadcast or multicast hardware address keeps its
+  names and loses this protection. Everything this Mac sends past such a link is addressed
+  so, and the test would leave every connection unnamed. The sniffer therefore reads the
+  gateway's hardware address from the system's neighbour table when it builds its filter,
+  and where that is a group address it reads a frame addressed to one as sent; a frame
+  addressed to this Mac's own address is still not. A host able to rewrite this Mac's entry
+  for the gateway turns the test off the same way, and then receives this Mac's traffic in
+  any case. While the gateway's address cannot be read, the test stays.
 - That test does not cover a link whose frames carry no hardware address (a tunnel), where
   a query is known as this Mac's by its IP source alone, nor an interface in promiscuous
-  mode, which also receives a forged frame addressed to a third host.
+  mode, which also receives a forged frame addressed to a third host. A resolver on the
+  link that is not the gateway and answers at a group address has its queries left unread,
+  so its replies name nothing.
 - A host that sees a real query, on a shared network or as the resolver itself, and
   answers first is not stopped either: that is the reply the Mac's own resolver takes too,
   so the name shown is the one the Mac was told.
