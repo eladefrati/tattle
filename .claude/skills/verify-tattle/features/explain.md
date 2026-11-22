@@ -392,6 +392,12 @@ Preconditions:
   after `No explanation yet.` showed each left the stored answer and the prompts sent as
   they were; after a second's pause `Confirm` and `Forget answer` acted. A press timed before the change
   rests on the unit test (`testAPressStraightAfterTheRowsButtonsChangeDoesNotCount`).
+- A host's prompt with where its name is from proven 2026-11-22 on the development Mac,
+  where the broker serves the dev copy, at the commit titled `docs(verify): name the builds
+  of three Explain proofs by their commits' titles`, run `2026-11-22T180711`: on a `connect
+  named` connection the detail read `Name from`, `what the program asked for in its HTTP
+  request`, and the recorded prompt's key was `example.com` and its `facts` `Address`,
+  `Protocol`, `Reach`, `Since` and `Name from` with those words.
 - A host name only the network resolves (`.local`, a search domain, no dot) going out as
   `<private-host>` and keeping no answer rests on unit tests
   (`testAHostNameOnlyThisNetworkResolvesIsReplaced`,
