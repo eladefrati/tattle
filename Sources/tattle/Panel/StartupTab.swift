@@ -122,7 +122,6 @@ private struct StartupRow: View {
 
 struct StartupDetail: View {
     let item: StartupItem
-    let back: String
     let state: AppState
     @State private var actionError: String?
 
@@ -138,7 +137,7 @@ struct StartupDetail: View {
     var body: some View {
         let item = current ?? self.item
         let gone = current == nil
-        DetailPage(back: back, title: item.name) {
+        DetailPage(title: item.name) {
             ItemHeader(name: item.name, path: item.program, signature: item.signature, gone: gone ? "No longer installed" : nil)
             if item.canExplain {
                 ExplainSection(request: ExplainRequest(kind: .launchItem, key: item.explainKey, facts: item.facts, identity: item.identity),

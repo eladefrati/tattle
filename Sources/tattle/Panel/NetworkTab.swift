@@ -198,7 +198,6 @@ private struct ConnectionRow: View {
 
 struct ConnectionGroupDetail: View {
     let group: ConnectionGroup
-    let back: String
     let state: AppState
 
     /// The group as it is now; gone once its last connection closed.
@@ -210,7 +209,7 @@ struct ConnectionGroupDetail: View {
         let now = state.panelNetworkSnapshot?.takenAt ?? Date()
         let facts = group.facts(gone: gone)
         let path = group.connections.first?.owner.app?.path ?? group.connections.first?.owner.path
-        DetailPage(back: back, title: group.name) {
+        DetailPage(title: group.name) {
             ItemHeader(name: group.name, path: group.connections.first?.owner.app?.path, signature: group.signature,
                        gone: gone ? "No open connections now" : nil) {
                 if let path { RevealButton(path: path) }
@@ -262,7 +261,6 @@ private struct CountsCard: View {
 
 struct ConnectionDetail: View {
     let live: LiveConnection
-    let back: String
     let state: AppState
 
     /// The connection as it is now; the one opened stays readable once it has closed.
@@ -271,7 +269,7 @@ struct ConnectionDetail: View {
     var body: some View {
         let live = current ?? self.live
         let now = state.panelNetworkSnapshot?.takenAt ?? Date()
-        DetailPage(back: back, title: live.title) {
+        DetailPage(title: live.title) {
             if let path = live.owner.app?.path ?? live.owner.path { RevealButton(path: path) }
         } content: {
             VStack(alignment: .leading, spacing: 3) {

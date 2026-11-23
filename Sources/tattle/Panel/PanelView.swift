@@ -9,19 +9,6 @@ enum PanelRoute: Hashable {
     case process(ProcessItem)
     case port(PortItem)
     case startupItem(StartupItem)
-
-    /// What the page after this one names on its way back.
-    var title: String {
-        switch self {
-        case .connectionGroup(let group): group.name
-        case .connection(let live): live.title
-        case .packetAccess: "Packet access"
-        case .processGroup(let group): group.name
-        case .process(let item): item.name
-        case .port(let item): String(item.port)
-        case .startupItem(let item): item.name
-        }
-    }
 }
 
 /// The pages open over the list, oldest first.
@@ -66,12 +53,11 @@ struct PanelView: View {
             ZStack {
                 list.shown(router.path.isEmpty)
                 ForEach(Array(router.path.enumerated()), id: \.offset) { index, route in
-                    page(route, back: index == 0 ? tab.rawValue : router.path[index - 1].title)
-                        .shown(index == router.path.count - 1)
+                    page(route).shown(index == router.path.count - 1)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if PanelLook.glass { RowLine().padding(.horizontal, 12) }
+            RowLine().padding(.horizontal, 12)
             footer
         }
         .environment(router)
@@ -86,13 +72,11 @@ struct PanelView: View {
         VStack(spacing: 0) {
             ResourcesLine(sample: state.panelSample)
                 .padding(.horizontal, 12)
-                .padding(.top, PanelLook.glass ? 16 : 12)
-            Group {
-                if #available(macOS 26.0, *) { glassTabs } else { tabs }
-            }
-            .padding(.horizontal, PanelLook.glass ? 16 : 12)
-            .padding(.top, PanelLook.glass ? 14 : 10)
-            .padding(.bottom, PanelLook.glass ? 12 : 8)
+                .padding(.top, 16)
+            tabs
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
             switch tab {
             case .network: NetworkTab(state: state)
             case .processes: ProcessesTab(state: state)
@@ -102,10 +86,9 @@ struct PanelView: View {
         }
     }
 
-    /// The tabs from macOS 26: one glass capsule holding the four, the selected one a raised
-    /// pill that slides to wherever it is picked.
-    @available(macOS 26.0, *)
-    private var glassTabs: some View {
+    /// The tabs: one glass capsule holding the four, the selected one a raised pill that slides
+    /// to wherever it is picked.
+    private var tabs: some View {
         HStack(spacing: 0) {
             ForEach(Tab.allCases) { item in
                 let selected = item == tab
@@ -156,65 +139,16 @@ struct PanelView: View {
         .glassEffect(.regular.interactive(), in: .capsule)
     }
 
-    /// The tabs before macOS 26.
-    private var tabs: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(Tab.allCases.enumerated()), id: \.element) { index, item in
-                let selected = item == tab
-                // A hairline between two tabs that are not selected; the selected one's fill
-                // already sets it apart.
-                let divided = index > 0 && !selected && Tab.allCases[index - 1] != tab
-                let fresh = item == .network ? state.panelNetworkSnapshot?.newCount ?? 0 : 0
-                Button {
-                    tab = item
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: item.symbol).font(.system(size: 12)).accessibilityHidden(true)
-                        Text(item.rawValue).fontWeight(selected ? .semibold : .regular)
-                        if fresh > 0 {
-                            Text(String(fresh))
-                                .font(.system(size: 11, weight: .semibold))
-                                .monospacedDigit()
-                                .padding(.horizontal, 4)
-                                .frame(minWidth: 16, minHeight: 16)
-                                .foregroundStyle(PanelColor.newText)
-                                .background(PanelColor.newBackground, in: Capsule())
-                        }
-                    }
-                    .foregroundStyle(selected ? PanelColor.text : PanelColor.sub)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 28)
-                    .background(selected ? PanelColor.selectedTab : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(PanelColor.line)
-                        .opacity(divided ? 0.7 : 0)
-                        .frame(width: 1, height: 14)
-                        .offset(x: -1.5)
-                        .accessibilityHidden(true)
-                }
-                .accessibilityLabel(item.rawValue)
-                .accessibilityValue(fresh > 0 ? "\(fresh) first contact" : "")
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-        }
-        .padding(3)
-        .background(PanelColor.tabs, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
     @ViewBuilder
-    private func page(_ route: PanelRoute, back: String) -> some View {
+    private func page(_ route: PanelRoute) -> some View {
         switch route {
-        case .connectionGroup(let group): ConnectionGroupDetail(group: group, back: back, state: state)
-        case .connection(let live): ConnectionDetail(live: live, back: back, state: state)
-        case .packetAccess: PacketAccessView(back: back, state: state)
-        case .processGroup(let group): ProcessGroupDetail(group: group, back: back, state: state)
-        case .process(let item): ProcessDetail(item: item, back: back, state: state)
-        case .port(let item): PortDetail(item: item, back: back, state: state)
-        case .startupItem(let item): StartupDetail(item: item, back: back, state: state)
+        case .connectionGroup(let group): ConnectionGroupDetail(group: group, state: state)
+        case .connection(let live): ConnectionDetail(live: live, state: state)
+        case .packetAccess: PacketAccessView(state: state)
+        case .processGroup(let group): ProcessGroupDetail(group: group, state: state)
+        case .process(let item): ProcessDetail(item: item, state: state)
+        case .port(let item): PortDetail(item: item, state: state)
+        case .startupItem(let item): StartupDetail(item: item, state: state)
         }
     }
 

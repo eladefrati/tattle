@@ -91,11 +91,9 @@ generic record class in place of the private ones (`Startup/LoginItems.swift`).
 
 ## Panel
 
-The panel has two looks, chosen by the macOS version it runs on (`PanelLook` in
-`Panel/PanelStyle.swift`). From macOS 26 it is drawn on the system's glass: rows lie on the
-window, text takes the system's label colours, the tabs are one glass capsule, and the
-readings have no box around them. Before macOS 26 it keeps its own opaque colours and cards.
-Both looks give the controls and readings the same accessibility labels.
+The panel is drawn on the system's glass (`Panel/PanelStyle.swift`): rows lie on the window,
+text takes the system's label colours, the tabs are one glass capsule, and the readings have
+no box around them.
 
 ## Knowledge base
 

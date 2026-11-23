@@ -5,23 +5,19 @@ struct ResourcesLine: View {
     let sample: ResourceSample
 
     var body: some View {
-        if #available(macOS 26.0, *) {
-            // From macOS 26 the four readings lie on the glass itself, the numerals first, all one
-            // size so they share a baseline. In and Out are as wide as their widest reading; CPU
-            // and Memory share what is left, so their meters are one length and the memory total
-            // fits beside a three-digit figure. Only the memory total's text may shrink.
-            HStack(alignment: .top, spacing: 10) {
-                stat("CPU", sample.cpu.formatted(.percent.precision(.fractionLength(0))), share: sample.cpu)
-                    .help(Self.allCoresHelp)
-                stat("Memory", memory.used, memoryTotal, share: memoryShare)
-                stat("In", rate(sample.bytesInPerSecond).value, rate(sample.bytesInPerSecond).unit, symbol: "arrow.down", widest: Self.widestRate)
-                stat("Out", rate(sample.bytesOutPerSecond).value, rate(sample.bytesOutPerSecond).unit, symbol: "arrow.up", widest: Self.widestRate)
-            }
-            .padding(.horizontal, 10)
-            .fixedSize(horizontal: false, vertical: true)
-        } else {
-            flat
+        // The four readings lie on the glass itself, the numerals first, all one size so they
+        // share a baseline. In and Out are as wide as their widest reading; CPU and Memory share
+        // what is left, so their meters are one length and the memory total fits beside a
+        // three-digit figure. Only the memory total's text may shrink.
+        HStack(alignment: .top, spacing: 10) {
+            stat("CPU", sample.cpu.formatted(.percent.precision(.fractionLength(0))), share: sample.cpu)
+                .help(Self.allCoresHelp)
+            stat("Memory", memory.used, memoryTotal, share: memoryShare)
+            stat("In", rate(sample.bytesInPerSecond).value, rate(sample.bytesInPerSecond).unit, symbol: "arrow.down", widest: Self.widestRate)
+            stat("Out", rate(sample.bytesOutPerSecond).value, rate(sample.bytesOutPerSecond).unit, symbol: "arrow.up", widest: Self.widestRate)
         }
+        .padding(.horizontal, 10)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The two CPU figures use different scales, as Activity Monitor's do: the Mac's is all
@@ -62,7 +58,7 @@ struct ResourcesLine: View {
         }
         .frame(maxWidth: widest == nil ? .infinity : nil, alignment: .topLeading)
         .fixedSize(horizontal: widest != nil, vertical: false)
-        // One static text, as the flat line's cells are, with the full unit: "Memory, 11.2 of 16 GB".
+        // One static text, with the full unit: "Memory, 11.2 of 16 GB".
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label), \(value)\(unit.isEmpty ? "" : " " + unit)")
     }
@@ -82,26 +78,6 @@ struct ResourcesLine: View {
             }
         }
         .lineLimit(1)
-    }
-
-    /// The line before macOS 26: one bar of four cells.
-    private var flat: some View {
-        HStack(spacing: 0) {
-            cell("CPU", sample.cpu.formatted(.percent.precision(.fractionLength(0))), share: sample.cpu)
-            line
-            cell("Memory", memory.used, memory.total, share: memoryShare)
-            line
-            cell("In", rate(sample.bytesInPerSecond).value, rate(sample.bytesInPerSecond).unit)
-            line
-            cell("Out", rate(sample.bytesOutPerSecond).value, rate(sample.bytesOutPerSecond).unit)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .monospacedDigit()
-        .background(PanelColor.fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private var line: some View {
-        Rectangle().fill(PanelColor.line).frame(width: 1)
     }
 
     private var memoryShare: Double {
@@ -131,26 +107,5 @@ struct ResourcesLine: View {
         let text = ByteRate.full(bytesPerSecond)
         guard let space = text.lastIndex(of: " ") else { return (text, "") }
         return (String(text[..<space]), String(text[text.index(after: space)...]))
-    }
-
-    private func cell(_ label: String, _ value: String, _ unit: String = "", share: Double? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(PanelFont.label).foregroundStyle(PanelColor.sub)
-            (Text(value).fontWeight(.semibold) + Text(unit.isEmpty ? "" : " " + unit).foregroundStyle(PanelColor.sub))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            if let share {
-                GeometryReader { geometry in
-                    Capsule().fill(PanelColor.track)
-                    Capsule().fill(PanelColor.meter).frame(width: geometry.size.width * min(max(share, 0), 1))
-                }
-                .frame(height: 3)
-                .accessibilityHidden(true)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .accessibilityElement(children: .combine)
     }
 }

@@ -76,7 +76,6 @@ private struct PortRow: View {
 
 struct PortDetail: View {
     let item: PortItem
-    let back: String
     let state: AppState
     @State private var actionError: String?
 
@@ -92,7 +91,7 @@ struct PortDetail: View {
 
     var body: some View {
         let canQuit = ProcessControl.canQuit(uid: item.uid)
-        DetailPage(back: back, title: String(item.port)) {
+        DetailPage(title: String(item.port)) {
             ItemHeader(name: "\(item.processName) on \(String(item.port)) \(item.proto.rawValue.uppercased())",
                        signature: item.signature, gone: isGone ? "No longer listening" : nil)
             ExplainSection(request: ExplainRequest(kind: .port, key: item.explainKey, facts: item.facts, isApplesProgram: item.isApplesProgram, identity: item.identity),

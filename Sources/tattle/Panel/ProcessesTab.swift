@@ -35,50 +35,26 @@ private struct ProcessesList: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: PanelLook.glass ? 6 : 12) {
-                if PanelLook.glass {
-                    // The columns' titles sort, as in Activity Monitor, and sit on the line
-                    // just above the rows' figures.
-                    HStack(alignment: .lastTextBaseline, spacing: 0) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(snapshot.groups.count) apps and programs, \(snapshot.items.count) processes")
-                                .accessibilityAddTraits(.isHeader)
-                            Text("Each app with its helpers, each program with what it started. Everything that is part of macOS is one row.")
-                                .font(PanelFont.small)
-                                .foregroundStyle(PanelColor.sub)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 12)
-                        sortTitle(.memory).frame(width: 64, alignment: .trailing)
-                        sortTitle(.cpu).frame(width: 44, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 6) {
+                // The columns' titles sort, as in Activity Monitor, and sit on the line
+                // just above the rows' figures.
+                HStack(alignment: .lastTextBaseline, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(snapshot.groups.count) apps and programs, \(snapshot.items.count) processes")
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Each app with its helpers, each program with what it started. Everything that is part of macOS is one row.")
+                            .font(PanelFont.small)
+                            .foregroundStyle(PanelColor.sub)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 10)
-                    .padding(.trailing, 25)
-                } else {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(snapshot.groups.count) apps and programs, \(snapshot.items.count) processes")
-                                .fontWeight(.semibold)
-                                .accessibilityAddTraits(.isHeader)
-                            Text("Each app with its helpers, each program with what it started. Everything that is part of macOS is one row.")
-                                .font(PanelFont.small)
-                                .foregroundStyle(PanelColor.sub)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                        Picker("Sort by", selection: $sort) {
-                            ForEach(ProcessSnapshot.Sort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .controlSize(.small)
-                        .frame(width: 120)
-                    }
-                    .padding(.horizontal, 4)
-                    .padding(.top, 2)
+                    Spacer(minLength: 12)
+                    sortTitle(.memory).frame(width: 64, alignment: .trailing)
+                    sortTitle(.cpu).frame(width: 44, alignment: .trailing)
                 }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 10)
+                .padding(.trailing, 25)
                 // A reading that failed leaves the last one on screen.
                 if let error = state.processes.error {
                     Text("The processes could not be read, so this list is from \(snapshot.takenAt.formatted(date: .omitted, time: .standard)). \(error)")
@@ -207,7 +183,6 @@ private struct TreeEntry: Identifiable {
 
 struct ProcessGroupDetail: View {
     let group: ProcessGroup
-    let back: String
     let state: AppState
     @State private var actionError: String?
     @State private var armed = false
@@ -218,7 +193,7 @@ struct ProcessGroupDetail: View {
     var body: some View {
         let group = current ?? self.group
         let gone = current == nil
-        DetailPage(back: back, title: group.name) {
+        DetailPage(title: group.name) {
             ItemHeader(name: group.name, path: group.kind == .process ? nil : group.path, signature: group.signature,
                        gone: gone ? "No longer running" : nil)
             if let key = group.explainKey {
@@ -240,7 +215,6 @@ struct ProcessGroupDetail: View {
 
 struct ProcessDetail: View {
     let item: ProcessItem
-    let back: String
     let state: AppState
     @State private var actionError: String?
     @State private var armed = false
@@ -259,7 +233,7 @@ struct ProcessDetail: View {
     var body: some View {
         let item = current ?? self.item
         let gone = current == nil
-        DetailPage(back: back, title: item.name) {
+        DetailPage(title: item.name) {
             ItemHeader(name: item.name, signature: item.signature, gone: gone ? "No longer running" : nil)
             ExplainSection(request: ExplainRequest(kind: .process, key: item.explainKey, facts: item.facts, isApplesProgram: item.isApplesProgram, identity: item.identity),
                            whyHere: item.whyHere(gone: gone), state: state)

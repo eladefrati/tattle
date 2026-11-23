@@ -1,32 +1,26 @@
 import SwiftUI
 
-/// Which of its two looks the panel has. From macOS 26 it sits on the system's glass: rows lie
-/// on the window itself, text takes the system's label colours, and controls are glass. Before
-/// that it keeps its own opaque colours and cards.
+/// The panel's measures. It sits on the system's glass: rows lie on the window itself, text
+/// takes the system's label colours, and controls are glass.
 enum PanelLook {
-    static let glass: Bool = { if #available(macOS 26.0, *) { true } else { false } }()
     /// The corner of a card and of a tile.
-    static let corner: CGFloat = glass ? 12 : 10
+    static let corner: CGFloat = 12
     /// How far a title sits from a list's edge, so it lines up with what is in the rows.
-    static let titleInset: CGFloat = glass ? 10 : 4
+    static let titleInset: CGFloat = 10
 }
 
 /// The panel's colours, each with its light and dark value.
 enum PanelColor {
-    static let panel = dynamic(light: rgb(0xF3F3F5), dark: rgb(0x232326))
-    /// What the panel's pages lie on. On glass, a wash of the window's own colour keeps text
-    /// legible over whatever is behind it; before that, the panel's own colour.
-    static let background = PanelLook.glass ? Color(nsColor: .windowBackgroundColor).opacity(0.42) : panel
-    // On glass, text and fills come from the system's own label colours, which stay legible
-    // over whatever shows through.
-    static let card = PanelLook.glass ? Color.primary.opacity(0.05) : dynamic(light: rgb(0xFFFFFF), dark: rgb(0x2E2E32))
-    static let fill = PanelLook.glass ? Color.primary.opacity(0.08) : dynamic(light: black(0.055), dark: white(0.08))
-    static let tabs = dynamic(light: black(0.035), dark: white(0.05))
-    static let selectedTab = dynamic(light: black(0.09), dark: white(0.13))
-    static let text = PanelLook.glass ? Color.primary : dynamic(light: rgb(0x1D1D1F), dark: rgb(0xF5F5F7))
-    static let sub = PanelLook.glass ? Color.secondary : dynamic(light: rgb(0x62626A), dark: rgb(0xAEAEB4))
-    static let line = PanelLook.glass ? Color.primary.opacity(0.1) : dynamic(light: black(0.09), dark: white(0.1))
-    static let edge = dynamic(light: black(0.18), dark: white(0.16))
+    /// What the panel's pages lie on: a wash of the window's own colour, which keeps text
+    /// legible over whatever is behind the glass.
+    static let background = Color(nsColor: .windowBackgroundColor).opacity(0.42)
+    // Text and fills come from the system's own label colours, which stay legible over
+    // whatever shows through the glass.
+    static let card = Color.primary.opacity(0.05)
+    static let fill = Color.primary.opacity(0.08)
+    static let text = Color.primary
+    static let sub = Color.secondary
+    static let line = Color.primary.opacity(0.1)
     static let accent = dynamic(light: rgb(0x0064E1), dark: rgb(0x4C9BFF))
     static let onAccent = dynamic(light: rgb(0xFFFFFF), dark: rgb(0x06182E))
     static let newBackground = dynamic(light: rgb(0xFFEDD6), dark: rgb(0xFF9F0A, alpha: 0.2))
@@ -34,7 +28,6 @@ enum PanelColor {
     static let newDot = dynamic(light: rgb(0xE07800), dark: rgb(0xFF9F0A))
     static let ok = dynamic(light: rgb(0x1F9D4D), dark: rgb(0x30D158))
     static let track = dynamic(light: black(0.14), dark: white(0.18))
-    static let meter = dynamic(light: rgb(0x6F6F76), dark: rgb(0xB4B4BA))
     static let bad = dynamic(light: rgb(0xC4271B), dark: rgb(0xFF6B61))
 
     private static func dynamic(light: NSColor, dark: NSColor) -> Color {
@@ -80,31 +73,20 @@ struct RowLine: View {
     }
 }
 
-/// Rows of a card, with a line between each two.
+/// A list's rows. They sit on the glass itself, as a menu's do; the pointer lights one up.
 struct CardRows<Item: Identifiable, Row: View>: View {
     let items: [Item]
     @ViewBuilder var row: (Item) -> Row
 
     var body: some View {
-        if PanelLook.glass {
-            // Rows sit on the glass itself, as a menu's do; the pointer lights one up.
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(items) { item in row(item) }
-            }
-        } else {
-            Card {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(items) { item in
-                        row(item)
-                        if item.id != items.last?.id { RowLine() }
-                    }
-                }
-            }
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(items) { item in row(item) }
         }
     }
 }
 
-/// A row that opens a page: its content, then the arrow.
+/// A row that opens a page: its content, then the arrow. The pointer lights the row up and
+/// brings out its arrow.
 struct NavRow<Content: View>: View {
     let route: PanelRoute
     @ViewBuilder var content: Content
@@ -112,30 +94,6 @@ struct NavRow<Content: View>: View {
     @State private var hovered = false
 
     var body: some View {
-        if PanelLook.glass {
-            glassBody
-        } else {
-            Button {
-                router.push(route)
-            } label: {
-                HStack(spacing: 10) {
-                    content
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(PanelColor.sub)
-                        .accessibilityHidden(true)
-                }
-                .padding(.leading, 10)
-                .padding(.trailing, 8)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    /// On glass the pointer lights the row up and brings out its arrow; only this look tracks
-    /// the pointer.
-    private var glassBody: some View {
         Button {
             router.push(route)
         } label: {
@@ -208,8 +166,7 @@ struct Pill: View {
     }
 }
 
-/// The app's icon when the row is an app, else the first letter of its name on a colour that
-/// stays the same for that name.
+/// The app's icon when the row is an app, else the first letter of its name on a neutral tile.
 struct IconTile: View {
     let name: String
     var path: String?
@@ -219,7 +176,7 @@ struct IconTile: View {
         Group {
             if let icon = Self.icon(path) {
                 Image(nsImage: icon).resizable().interpolation(.high)
-            } else if PanelLook.glass {
+            } else {
                 // A neutral tile with the letter in capitals, or Apple's logo for the macOS row.
                 RoundedRectangle(cornerRadius: size / 4, style: .continuous)
                     .fill(PanelColor.fill)
@@ -234,28 +191,10 @@ struct IconTile: View {
                                 .foregroundStyle(PanelColor.sub)
                         }
                     }
-            } else {
-                RoundedRectangle(cornerRadius: size / 4, style: .continuous)
-                    .fill(Self.tint(name))
-                    .overlay {
-                        Text(name.prefix(1))
-                            .font(.system(size: size / 2, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
             }
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
-    }
-
-    private static let tints: [Color] = ([0x2F7DE1, 0x7A3B86, 0x1F9D4D, 0x3A8FD6, 0x2A5BD7, 0x4A4A52, 0x5A7D3A, 0x8A8A92, 0x3C78D8, 0x6B6B73] as [Int]).map { (hex: Int) -> Color in
-        Color(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
-    }
-
-    private static func tint(_ name: String) -> Color {
-        // Not `hashValue`: that changes from one launch to the next.
-        let sum = name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
-        return tints[sum % tints.count]
     }
 
     @MainActor private static let icons = NSCache<NSString, NSImage>()
@@ -271,8 +210,8 @@ struct IconTile: View {
     }
 }
 
-/// The panel's buttons: plain on a card colour, the main action in the accent colour, a
-/// destructive one in red.
+/// The panel's buttons, each a glass capsule: plain, the main action tinted with the accent
+/// colour, a destructive one with red.
 struct PanelButtonStyle: ButtonStyle {
     enum Kind { case plain, primary, danger }
 
@@ -280,38 +219,16 @@ struct PanelButtonStyle: ButtonStyle {
     var height: CGFloat = 24
     @Environment(\.isEnabled) private var isEnabled
 
-    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        if #available(macOS 26.0, *) {
-            configuration.label
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 12)
-                .frame(height: max(height, 26))
-                .foregroundStyle(foreground)
-                .glassEffect(kind == .plain ? .regular.interactive(isEnabled) : .regular.tint(background).interactive(isEnabled), in: .capsule)
-                .opacity(isEnabled ? 1 : 0.45)
-        } else {
-            flatBody(configuration)
-        }
-    }
-
-    private func flatBody(_ configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: kind == .plain ? .regular : .medium))
+            .font(.system(size: 12, weight: .medium))
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, 10)
-            .frame(height: height)
+            .padding(.horizontal, 12)
+            .frame(height: max(height, 26))
             .foregroundStyle(foreground)
-            .background(background, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay {
-                if kind == .plain {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(PanelColor.edge, lineWidth: 0.5)
-                }
-            }
-            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
+            .glassEffect(kind == .plain ? .regular.interactive(isEnabled) : .regular.tint(background).interactive(isEnabled), in: .capsule)
+            .opacity(isEnabled ? 1 : 0.45)
     }
 
     private var foreground: Color {
@@ -423,7 +340,6 @@ extension CodeSignature {
 /// A detail page: the bar with the way back and the title, what scrolls, and the buttons that
 /// stay put under it.
 struct DetailPage<Trailing: View, Content: View, Bar: View>: View {
-    let back: String
     let title: String
     @ViewBuilder var trailing: Trailing
     @ViewBuilder var content: Content
@@ -433,45 +349,28 @@ struct DetailPage<Trailing: View, Content: View, Bar: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                // Clear of the way back on both sides, so the title stays centred: the text
-                // button before macOS 26 is at most 110 wide, the glass chevron 28 and a gap.
+                // Clear of the way back on both sides, so the title stays centred: the chevron
+                // is 28 wide, and a gap.
                 Text(title).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
-                    .padding(.horizontal, PanelLook.glass ? 36 : 110)
+                    .padding(.horizontal, 36)
                 HStack {
-                    if #available(macOS 26.0, *) {
-                        Button {
-                            router.pop()
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 12, weight: .semibold))
-                                .frame(width: 28, height: 28)
-                                .glassEffect(.regular.interactive(), in: .circle)
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Back")
-                    } else {
-                        Button {
-                            router.pop()
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                                Text(back).lineLimit(1)
-                            }
-                            .foregroundStyle(PanelColor.accent)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Back")
-                        .frame(maxWidth: 110, alignment: .leading)
+                    Button {
+                        router.pop()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                            .contentShape(Circle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
                     Spacer()
                     trailing
                 }
             }
             .padding(.horizontal, 12)
-            .frame(height: PanelLook.glass ? 48 : 40)
-            if !PanelLook.glass { RowLine() }
+            .frame(height: 48)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) { content }
                     .padding(.horizontal, 12)
@@ -485,8 +384,8 @@ struct DetailPage<Trailing: View, Content: View, Bar: View>: View {
 }
 
 extension DetailPage where Trailing == EmptyView {
-    init(back: String, title: String, @ViewBuilder content: () -> Content, @ViewBuilder bar: () -> Bar) {
-        self.init(back: back, title: title, trailing: { EmptyView() }, content: content, bar: bar)
+    init(title: String, @ViewBuilder content: () -> Content, @ViewBuilder bar: () -> Bar) {
+        self.init(title: title, trailing: { EmptyView() }, content: content, bar: bar)
     }
 }
 

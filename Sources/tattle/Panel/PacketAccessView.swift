@@ -5,7 +5,6 @@ import SwiftUI
 /// Pushed inside the panel; the work and its outcome live in the observer, so that they do
 /// not depend on the panel being open.
 struct PacketAccessView: View {
-    let back: String
     let state: AppState
     @Environment(PanelRouter.self) private var router
 
@@ -13,7 +12,7 @@ struct PacketAccessView: View {
         let network = state.network
         let broker = network.broker
         let capturing = if case .capturing = network.captureStatus { true } else { false }
-        DetailPage(back: back, title: "Packet access") {
+        DetailPage(title: "Packet access") {
             Card {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
