@@ -46,8 +46,8 @@ APP_STACK     := 0x800000
 # The SDK make app builds with, handed to the link of each Swift executable. swiftc gives the
 # SDK to clang, which runs the link, as --sysroot, and clang reads an SDK's version only from
 # -isysroot or SDKROOT: under the Swift Build system, which runs the link without SDKROOT,
-# ld then records the deployment target (macOS 26) as the SDK, and macOS draws the app's
-# windows as for that system.
+# ld then records the deployment target (macOS 26) as the SDK, and an app built with a newer
+# SDK gets its windows drawn as for macOS 26, not as for the SDK it was built with.
 SDK           := $(shell xcrun --sdk macosx --show-sdk-path)
 LINK_SDK      := -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK)
 # make release builds here, so it never replaces a release build running from build/Tattle.app.
@@ -148,7 +148,7 @@ endif
 	    || { echo "error: $(APPDIR)/Contents/MacOS/$(APP) ($$a) does not fix its main thread's stack size" >&2; exit 1; }; \
 	done
 	@# macOS draws an app's windows by the SDK recorded in its binary, so a binary that records an
-	@# older SDK than the one it was built with gets an older system's windows (see SDK above).
+	@# SDK below the one it was built with gets the windows of the SDK it records (see SDK above).
 	@want=$$(xcrun --sdk "$(SDK)" --show-sdk-version) && [ -n "$$want" ] \
 	  || { echo "error: cannot read the version of the SDK $(SDK)" >&2; exit 1; }; \
 	for f in $(APPDIR)/Contents/MacOS/$(APP) $(APPDIR)/Contents/MacOS/$(BROKER); do \
