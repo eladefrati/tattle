@@ -130,25 +130,25 @@ struct ExplainSection: View {
         switch control {
         case .explain:
             Button("Explain") { press { ask() } }
-                .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
+                .buttonStyle(.panelPrimary)
                 .disabled(busy || !providerConfigured)
         case .askAgain:
             Button("Ask again") { press { ask() } }
-                .buttonStyle(PanelButtonStyle(height: 22))
+                .buttonStyle(.panel)
                 .disabled(busy || !providerConfigured)
         case .confirm:
             Button("Confirm") { press { if let rule { confirm(rule) } } }
-                .buttonStyle(PanelButtonStyle(kind: .primary, height: 22))
+                .buttonStyle(.panelPrimary)
         case .forget:
             Button("Forget\u{2026}") { press { forgetting = true } }
-                .buttonStyle(PanelButtonStyle(height: 22))
+                .buttonStyle(.panel)
                 .disabled(busy)
         case .cancel:
             Button("Cancel") { press { forgetting = false } }
-                .buttonStyle(PanelButtonStyle(height: 22))
+                .buttonStyle(.panel)
         case .forgetAnswer:
             Button("Forget answer") { press { if let rule { forget(rule) } } }
-                .buttonStyle(PanelButtonStyle(kind: .danger, height: 22))
+                .buttonStyle(.panelDanger)
         }
     }
 

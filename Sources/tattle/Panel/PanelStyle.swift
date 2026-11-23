@@ -216,7 +216,6 @@ struct PanelButtonStyle: ButtonStyle {
     enum Kind { case plain, primary, danger }
 
     var kind = Kind.plain
-    var height: CGFloat = 24
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
@@ -225,9 +224,9 @@ struct PanelButtonStyle: ButtonStyle {
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 12)
-            .frame(height: max(height, 26))
+            .frame(height: 26)
             .foregroundStyle(foreground)
-            .glassEffect(kind == .plain ? .regular.interactive(isEnabled) : .regular.tint(background).interactive(isEnabled), in: .capsule)
+            .glassEffect(tint.map { Glass.regular.tint($0).interactive(isEnabled) } ?? .regular.interactive(isEnabled), in: .capsule)
             .opacity(isEnabled ? 1 : 0.45)
     }
 
@@ -239,9 +238,10 @@ struct PanelButtonStyle: ButtonStyle {
         }
     }
 
-    private var background: Color {
+    /// What tints the glass; a plain button's has no tint.
+    private var tint: Color? {
         switch kind {
-        case .plain: PanelColor.card
+        case .plain: nil
         case .primary: PanelColor.accent
         case .danger: PanelColor.bad
         }
