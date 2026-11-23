@@ -219,8 +219,7 @@ as root.
   broker as an agent in the user's own launchd domain, which takes the same XPC path
   without root.
 - `SecCodeCreateWithXPCMessage` is public. The SDK header states no availability for it,
-  but the macOS 12.1 through 15.4 SDKs export it, so every release Tattle supports has it.
-  The broker is checked on macOS 26 only.
+  but the macOS 26.5 and 27.2 SDKs export it. The broker is checked on macOS 26 only.
 - The broker does not use XPC's own peer requirements, for two reasons. A peer they refuse
   sees only an interrupted connection, which the app could not tell from a crashed broker.
   And their lightweight form cannot say "no get-task-allow".

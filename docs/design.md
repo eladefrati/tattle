@@ -144,7 +144,7 @@ never contaminates the rest.
 
 ## Stack
 
-Swift, SwiftUI `MenuBarExtra`, macOS 14 or later. Swift Package Manager with a Makefile target
+Swift, SwiftUI `MenuBarExtra`, macOS 26 or later. Swift Package Manager with a Makefile target
 (`make app`) that assembles the app bundle (Info.plist with `LSUIElement`) and signs it and the broker with
 the hardened runtime: with the first Apple Development identity in the keychain, or ad hoc
 without one; no Xcode project

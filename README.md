@@ -85,7 +85,7 @@ process, so Tattle shows every host it contacted but not which tab caused it.
 
 ## Install
 
-Tattle needs macOS 14 or later, on Apple silicon or Intel.
+Tattle needs macOS 26 or later, on Apple silicon or Intel.
 
 ### Download
 

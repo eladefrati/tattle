@@ -46,7 +46,7 @@ APP_STACK     := 0x800000
 # The SDK make app builds with, handed to the link of each Swift executable. swiftc gives the
 # SDK to clang, which runs the link, as --sysroot, and clang reads an SDK's version only from
 # -isysroot or SDKROOT: under the Swift Build system, which runs the link without SDKROOT,
-# ld then records the deployment target (macOS 14) as the SDK, and macOS draws the app's
+# ld then records the deployment target (macOS 26) as the SDK, and macOS draws the app's
 # windows as for that system.
 SDK           := $(shell xcrun --sdk macosx --show-sdk-path)
 LINK_SDK      := -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK)
