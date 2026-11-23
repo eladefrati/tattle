@@ -93,7 +93,7 @@
       "owner": "Apple",
       "purpose": "AirPlay Receiver: this Mac can be an AirPlay target for other devices.",
       "why": "AirPlay Receiver is switched on in this Mac's settings.",
-      "care": "Devices on your network can see this Mac as an AirPlay target. If you never use it, switch it off under System Settings, General, AirDrop & Continuity (AirDrop & Handoff before macOS 26).",
+      "care": "Devices on your network can see this Mac as an AirPlay target. If you never use it, switch it off under System Settings, General, AirDrop & Continuity.",
       "category": "sharing",
       "risk": "low",
       "confidence": "high"
