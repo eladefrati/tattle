@@ -81,7 +81,7 @@ to get to it (user POV)`, `Driving it with tattle-verify` (starting with
   2026-11-08; rows another process wrote into the rule table, for processes and ports, and a
   command that leaves its process group, 2026-11-15.
 - [Panel open and closed](./panel.md): closing the panel keeps its views and stops their
-  work, and what reopening shows. Proven 2026-11-09; the glass look from macOS 26 seen
-  2026-11-16.
+  work, and what reopening shows. Proven 2026-11-09; the glass look seen 2026-11-16 and
+  2026-11-22.
 - [App icon and menu bar glyph](./icon.md): the bundle's icon and the menu bar eye, running
   and after a failed start. Proven 2026-11-12 on the test Mac.

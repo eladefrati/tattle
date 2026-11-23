@@ -8,10 +8,10 @@ and for the user's own processes `Quit` and `Force Quit…`.
 ## Sub-features
 
 - `pr-header`: `N apps and programs, M processes`, the line `Each app with its helpers, ...`
-  and the sort controls `Memory`, `CPU`. From macOS 26 they are the titles of the two columns,
-  buttons whose value is `sorted` for the one in use; before it, the segments of a `Sort by`
-  picker. From macOS 26, hovering the CPU column title shows `Share of one core. 100% is one
-  core fully used; this Mac has N.` and the Memory one `Memory this row's processes hold now.`
+  and the sort controls `Memory`, `CPU`. They are the titles of the two columns, buttons
+  whose value is `sorted` for the one in use. Hovering the CPU column title shows `Share of
+  one core. 100% is one core fully used; this Mac has N.` and the Memory one `Memory this
+  row's processes hold now.`
 - `pr-group`: a group row; one with several members opens a list, one with a single
   member opens its detail.
 - `pr-detail`: facts including `Process <name> (pid N)` and `Parent`, `No longer running`
@@ -132,9 +132,9 @@ Preconditions:
   folder holding `index.js` (`setInterval(() => {}, 5000)`). The row reads `node, 1 process
   · node script`, not `.`. With node.js's own build (the test Mac's `~/.local/node`), the detail
   has `Interpreter signed by Node.js Foundation` and `Interpreter team HX7739G8FX`.
-- **Sort.** `$V ax press CPU` (the column title, or the segment before macOS 26; the
-  resources line's `CPU, N%` text is not pressable), wait 3 s, `$V save processes-cpu`; the
-  rows reorder by CPU, and from macOS 26 `sorted` follows `CPU` in `processes-cpu.txt`.
+- **Sort.** `$V ax press CPU` (the column title; the resources line's `CPU, N%` text is not
+  pressable), wait 3 s, `$V save processes-cpu`; the rows reorder by CPU, and `sorted`
+  follows `CPU` in `processes-cpu.txt`.
 - **Marker process.** Start one the run owns: `nohup /bin/sleep 7777 >/dev/null 2>&1 &`
   and note its pid. It is filed under the app responsible for this terminal: press
   `--prefix "<terminal>,"`. Members are listed in process-tree order, so the marker is far
@@ -258,5 +258,4 @@ Preconditions:
 - On the development Mac the panel closed partway through two runs (`2026-11-07T224046`,
   `2026-11-07T224152`) when something else took focus; retrying each reading got through.
 - The column titles' tooltips seen 2026-11-16 in the dev copy on the development Mac, by a
-  scripted hover, on the branch that brought the glass look; no run folder. Not driven in the
-  app: the column titles and their tooltips on any macOS before 26, which has neither.
+  scripted hover, on the branch that brought the glass look; no run folder.

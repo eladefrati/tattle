@@ -69,20 +69,20 @@ Preconditions:
 - On the test Mac a real Command-Tab and the administrator dialog, up and cancelled, leave the panel
   on screen and updating. Display sleep with the session locked and a move to a full-screen
   Space take it off screen; it comes back by itself, updating, on wake and on the move back.
-- Not driven: a real system sleep (the test Mac's is off), a swipe between ordinary desktops, and any
-  macOS before 26. The ten-second limit rests on `testAReadingLongAfterThePreviousHasNoCPU`.
+- Not driven: a real system sleep (the test Mac's is off) and a swipe between ordinary desktops.
+  The ten-second limit rests on `testAReadingLongAfterThePreviousHasNoCPU`.
   Nothing can force a missed occlusion change, so the re-read on attach and on becoming key is
   proven only not to disturb the paths above.
 - `PanelVisibilityTests` covers the two read accessors, not the views; the reader and the
   loops' wiring rest on the runs above.
 - The first click on the eye while the Settings window is open does not open the panel; the
   next one does. Seen on `main` too.
-- The opaque look, now the look before macOS 26, seen 2026-11-12 on the development Mac in the
-  dev copy, runs
-  `2026-11-12T105819` to `2026-11-12T113852` (from `2026-11-12T112604` at `58b901e` or later):
-  in dark, the Network list, an app's page, a connection's page, the Processes list, an app's
-  process page with `Force Quit…` armed, the Ports list, a port's page with and without an
-  explanation, the Startup list, a login item's page and Packet access; in light, the
+- What each view says, seen 2026-11-12 on the development Mac in the dev copy, runs
+  `2026-11-12T105819` to `2026-11-12T113852` (from `2026-11-12T112604` at `58b901e` or later),
+  in the opaque look the panel had then, which is removed, so the runs do not show how a view
+  is drawn now: in dark, the Network list, an app's page, a connection's page, the Processes
+  list, an app's process page with `Force Quit…` armed, the Ports list, a port's page with and
+  without an explanation, the Startup list, a login item's page and Packet access; in light, the
   Processes list and an app's process page; a first contact with no explanation as one line,
   and as `No name seen` when it has no name. On a listener the run started (`nc -l 127.0.0.1
   54999`), with the fake provider behind `sleep 6`: the spinner while asking, the answer with
@@ -94,13 +94,17 @@ Preconditions:
   could not start.` with SQLite's error and `Quit Tattle` (`2026-11-12-failed-start/`). Not
   driven: the lists without packet access or Full Disk Access, and a process, an app's
   connections or a startup item gone under its open page.
-- From macOS 26 the panel draws on the system's glass (`PanelLook.glass`): the lists' rows lie
-  on the window and light up under the pointer, which also shows their arrow; the tabs are one
-  capsule; the readings have no boxes (resources.md); Processes sorts by its column titles
-  (processes.md); the Back button is a chevron, still labelled `Back`. Before macOS 26 the
-  panel keeps the opaque look. The labels the recipes use are the same in both. Seen
-  2026-11-16 on the development Mac in the dev copy at `93f6151`, run `2026-11-16T174432`: the
-  four tabs, Processes sorted by Memory and by CPU, the macOS row's page, a port's page and
-  Packet access, in dark, and the same views captured in light. Not driven: any macOS before
-  26, where the look rests on the opaque look's code, seen 2026-11-12 (above) and kept for
-  macOS before 26 behind the macOS 26 checks.
+- The panel draws on the system's glass: the lists' rows lie on the window and light up under
+  the pointer, which also shows their arrow; the tabs are one capsule; the readings have no
+  boxes (resources.md); Processes sorts by its column titles (processes.md); the Back button
+  is a chevron, labelled `Back`. Seen 2026-11-16 on the development Mac in the dev copy at
+  `93f6151`, run `2026-11-16T174432`: the four tabs, Processes sorted by Memory and by CPU,
+  the macOS row's page, a port's page and Packet access, in dark, and the same views captured
+  in light. Seen again 2026-11-22 on the test Mac (macOS 26.7.1) in the dev copy, once the
+  look before macOS 26 was removed: the four tabs, Processes sorted by Memory and by CPU, the
+  macOS row's page, Back from it and Packet access, in dark, at `ca1112d` before the removal
+  (run `2026-11-22T192204`) and at `d6c5505` after it (run `2026-11-22T192404`). The
+  accessibility trees have the same elements, but for one connection that had closed, and the
+  screenshots differ only in what the Mac was doing: the readings, a row's figures, and the
+  order of the Network and Processes rows; Packet access is the same pixel for pixel. Copies
+  in this Mac's `build/verify/runs/test-mac-2026-11-22/`. Not captured again in light.

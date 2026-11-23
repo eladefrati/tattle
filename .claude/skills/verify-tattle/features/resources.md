@@ -7,13 +7,13 @@ interface at a time between two readings.
 ## Sub-features
 
 - `res-line`: `CPU`, `Memory`, `In` and `Out`, each followed by its value (`5 kB/s`).
-- `res-glass`: from macOS 26 the readings lie on the glass with no box. Each label sits above
+- `res-glass`: the readings lie on the glass with no box. Each label sits above
   its 20 pt numeral, `In` and `Out` with a down and an up arrow, and CPU and Memory have a
   meter under it. `In` and `Out` are each as wide as their widest reading, `999.9 MB/s`, and
   sit at the right edge; CPU and Memory share the rest. Memory reads `<used> of <total> GB`,
   or `<used> /<total> GB` when the total is 1,000 GB or more. Hovering CPU shows `All N cores
   together. 100% is every core fully used.` Each reading is one static text to accessibility,
-  `Memory, 11.2 of 16 GB`. Before macOS 26 the readings are one bar of four cells.
+  `Memory, 11.2 of 16 GB`.
 - `res-rate`: loopback, tunnels (`utun`, `ipsec`, `gif`, `stf`), bridges and the VM interfaces
   that join them (`bridge`, `vmenet`), VLANs (`vlan`), link aggregates (`bond`) and virtual
   Ethernet pairs (`feth`) are not counted. Every other interface is.
