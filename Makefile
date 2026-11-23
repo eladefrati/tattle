@@ -180,7 +180,9 @@ release:
 	@# with an identity leaves its certificate's name: neither ships. Only the path of GitHub's
 	@# runner account, where releases are built, is expected; a release built elsewhere fails.
 	@test -d $(DISTDIR)/Tattle.app
-	@others=$$(grep -rahoE '/Users/[A-Za-z0-9._-]+' $(DISTDIR)/Tattle.app | sort -u | grep -vxE '/Users/(runner|Shared)'); \
+	@paths=$$(sh scripts/account-paths.sh $(DISTDIR)/Tattle.app) \
+	  || { echo "error: cannot read the app's files for the paths of accounts" >&2; exit 1; }; \
+	others=$$(echo "$$paths" | grep -vxE '/Users/(runner|Shared)'); \
 	  [ -z "$$others" ] || { echo "error: the app holds the path of an account other than the runner's: $$others" >&2; exit 1; }
 	@! grep -rlaE 'Apple Development: [^[:cntrl:]]' $(DISTDIR)/Tattle.app \
 	  || { echo "error: the files above hold a development certificate's name" >&2; exit 1; }
