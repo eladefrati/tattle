@@ -317,7 +317,7 @@ struct ProcessGroup: Equatable, Sendable, Identifiable {
 }
 
 struct ProcessSnapshot: Equatable, Sendable {
-    enum Sort: String, CaseIterable, Sendable {
+    enum Sort: String, Sendable {
         case memory = "Memory"
         case cpu = "CPU"
     }
